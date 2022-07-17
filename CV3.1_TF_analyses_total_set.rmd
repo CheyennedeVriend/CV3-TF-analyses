@@ -1,0 +1,2246 @@
+---
+title: "CV3.1: DoRothEA analysis - total set"
+author: "C.deVriend"
+date: "7-4-2022"
+output: html_document
+toc: true
+toc_float: true
+number_sections: true
+theme: readable
+code_folding: hide
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+```{css, echo=FALSE}
+pre {
+  max-height: 300px;
+  overflow-y: auto;
+}
+pre[class] {
+  max-height: 100px;
+}
+```
+
+# DoRothEA - transcription factor activity
+In order to understand the transcriptional regulation during the process of differentiation it is of interest to gain information about specific transcription factor activity. Therefore, the free available software DoRothEA will be employed as it contains a curated collection of transcription factors (TFs) and their transcriptional targets. The set of genes regulated by a certain TF is known as a regulon. The regulons from DoRothEA were gathered from a variety of evidence based studies. The confidence levels DoRothEA implements in the output range from A with the largest confidence to E with the lowest confidence.
+
+```{r}
+# #Main libraries
+library(readr)
+library(vsn)
+library(DESeq2)
+
+#Support functions also requires
+library(ggplot2)
+library(reshape)
+library(pheatmap)
+library(gridExtra)
+library(grid)
+library(cowplot)
+library(ggrepel)
+library(hexbin)
+
+# Install dorothea
+#if (!require("BiocManager", quietly = TRUE))
+#    install.packages("BiocManager")
+
+#BiocManager::install("dorothea")
+
+# Load required libraries and support functions
+library(progeny)
+library(dorothea)
+library(tibble)
+library(tidyr)
+library(dplyr)
+library(ggplot2)
+library(pheatmap)
+library(readr)
+
+## For optional volcano plot (related to support functions)
+library(ggrepel)
+```
+
+## Pre-processing and normalizaton
+In order to create the appropriate input for DoRothEA, the raw count matrix needs to be imported. After pre-processing and normalization a differential expression analysis will be performed by DESeq.
+
+```{r}
+# DESeq2 data transformation 
+# load library
+library(DESeq2)
+
+# Open raw count data
+ggr.rna.counts.mat.txt <- read.delim("data/ggr.rna.counts.mat.txt.gz", row.names=1)
+
+head(ggr.rna.counts.mat.txt)
+```
+```{r}
+# Annotate matrix with HGNC symbols
+library(biomaRt)
+library(dplyr)
+mart= useDataset("hsapiens_gene_ensembl", useMart("ensembl"))
+genes=rownames(ggr.rna.counts.mat.txt)
+gene_list= getBM(attributes = c("ensembl_gene_id", "hgnc_symbol"), values = rownames(ggr.rna.counts.mat.txt), mart=mart)
+matched= match(rownames(ggr.rna.counts.mat.txt), gene_list$ensembl_gene_id)
+# change rowname to column
+ggr.rna.counts.mat.txt<-rownames_to_column(ggr.rna.counts.mat.txt)
+# Merge set that contains count matrix and set that contains hgnc symbols
+Counts_hgnc_ensembl<-merge(ggr.rna.counts.mat.txt, gene_list, by.x="rowname",by.y="ensembl_gene_id")
+# convert data to df
+Counts_hgnc_ensembl<-as.data.frame(Counts_hgnc_ensembl)
+# Replace empty cells with NA
+Counts_hgnc_ensembl[Counts_hgnc_ensembl == ""] <- NA
+# Remove NA's # we go from 52090 rows to 37450 rows
+Counts_hgnc_ensembl<- na.omit(Counts_hgnc_ensembl)
+# Remove duplicate rownames: ‘DUXAP8’, ‘GOLGA8M’, ‘ITFG2-AS1’, ‘LINC01238’, ‘PINX1’, ‘POLR2J4’, ‘RN7SL274P’, ‘RNU6-280P’, ‘RNU6-318P’, ‘RNU6-545P’, ‘RNU6-771P’, ‘SIGLEC5’, ‘TUBB7P’,TNFRSF10A-DT
+# I know these are duplicates because when you want to try to change rownames it gives an error message that indicates which names are the duplicates
+Counts_hgnc_ensembl<-Counts_hgnc_ensembl[!(Counts_hgnc_ensembl$hgnc_symbol== "DUXAP8"),]
+Counts_hgnc_ensembl<-Counts_hgnc_ensembl[!(Counts_hgnc_ensembl$hgnc_symbol== "GOLGA8M"),]
+Counts_hgnc_ensembl<-Counts_hgnc_ensembl[!(Counts_hgnc_ensembl$hgnc_symbol== "ITFG2-AS1"),]
+Counts_hgnc_ensembl<-Counts_hgnc_ensembl[!(Counts_hgnc_ensembl$hgnc_symbol== "LINC01238"),]
+Counts_hgnc_ensembl<-Counts_hgnc_ensembl[!(Counts_hgnc_ensembl$hgnc_symbol== "PINX1"),]
+Counts_hgnc_ensembl<-Counts_hgnc_ensembl[!(Counts_hgnc_ensembl$hgnc_symbol== "POLR2J4"),]
+Counts_hgnc_ensembl<-Counts_hgnc_ensembl[!(Counts_hgnc_ensembl$hgnc_symbol== "RN7SL274P"),]
+Counts_hgnc_ensembl<-Counts_hgnc_ensembl[!(Counts_hgnc_ensembl$hgnc_symbol== "RNU6-280P"),]
+Counts_hgnc_ensembl<-Counts_hgnc_ensembl[!(Counts_hgnc_ensembl$hgnc_symbol== "RNU6-318P"),]
+Counts_hgnc_ensembl<-Counts_hgnc_ensembl[!(Counts_hgnc_ensembl$hgnc_symbol== "RNU6-545P"),]
+Counts_hgnc_ensembl<-Counts_hgnc_ensembl[!(Counts_hgnc_ensembl$hgnc_symbol== "RNU6-771P"),]
+Counts_hgnc_ensembl<-Counts_hgnc_ensembl[!(Counts_hgnc_ensembl$hgnc_symbol== "SIGLEC5"),]
+Counts_hgnc_ensembl<-Counts_hgnc_ensembl[!(Counts_hgnc_ensembl$hgnc_symbol== "TUBB7P"),]
+Counts_hgnc_ensembl<-Counts_hgnc_ensembl[!(Counts_hgnc_ensembl$hgnc_symbol== "TNFRSF10A-DT"),]
+# Rownames # This left us with 37424 rows
+rownames(Counts_hgnc_ensembl)=Counts_hgnc_ensembl$hgnc_symbol
+# Remove ID columns
+Counts_hgnc_ensembl<-dplyr::select(Counts_hgnc_ensembl,-c(rowname))
+Counts_hgnc_ensembl<-dplyr::select(Counts_hgnc_ensembl,-c(hgnc_symbol))
+```
+```{r}
+# first remove rows that contain only 0
+Counts_hgnc_ensembl<-Counts_hgnc_ensembl[rowSums(Counts_hgnc_ensembl)>0,]
+# Leaves us with 19186 genes. However, we will need to remove counts below 10 as well as the differential analysis function also does this. We want to keep both the data frames exactly the same amount of rows.
+# Remove rows count below 10; leaves us with 16504 genes
+Counts_hgnc_ensembl<-Counts_hgnc_ensembl[rowSums(Counts_hgnc_ensembl)>9,]
+``` 
+After annotation we will perform the differential expression analysis with the DESeq package.
+```{r}
+# create sample information columns
+Sample_name<- c('d00_b1', 'd00_b2', 'd05_b1', 'd05_b2', 'd10_b1', 'd10_b2', 'd15_b1', 'd15_b2', 'd20_b1', 'd20_b2', 'd25_b1', 'd25_b2', 'd30_b1', 'd30_b2', 'd45_b1', 'd45_b2', 'd50_b1', 'd50_b2', 'd60_b1', 'd60_b2')
+Bulk_set<- c('original', 'duplicate', 'original', 'duplicate', 'original', 'duplicate', 'original', 'duplicate', 'original', 'duplicate', 'original', 'duplicate', 'original', 'duplicate', 'original', 'duplicate', 'original', 'duplicate', 'original', 'duplicate')
+Timepoint_days<-c(0,0,0.5,0.5,1,1,1.5,1.5,2,2,2.5,2.5,3,3,4.5,4.5,5,5,6,6)
+# combine columns # Sample info
+Sample_information<-data.frame(Sample_name, Bulk_set, Timepoint_days)
+
+# DESeq2 dataset
+ddsASMtime <-DESeqDataSetFromMatrix(countData = Counts_hgnc_ensembl, colData = Sample_information, design = ~Bulk_set + Timepoint_days)
+# filter zero counts out
+ddsASMtime<-ddsASMtime[rowSums(counts(ddsASMtime))>1,]
+# Stabalize variance
+ddsASMtime=estimateSizeFactors(ddsASMtime)
+ddsASMtime=estimateDispersions(ddsASMtime)
+gene_expr=getVarianceStabilizedData(ddsASMtime) # THIS IS THE DATASET THAT CONTAINS VST COUNTS; USE THIS FOR VISUALIZATION
+
+head(gene_expr)
+```
+
+Now we have imported the raw count matrix and annotated the genes we can perform differential expression analysis.
+```{r}
+# Perform DEseq differential expression analysis
+Differentialexpressiontotalset<- DESeq(ddsASMtime)
+diffexpranalysisresults<-results(Differentialexpressiontotalset)
+```
+
+Now we have accurately prepared all datasets for TF analysis. 
+
+## Transcription factor activity with DoRothEA
+We will estimate the transcription factor (TF) activity using DoRothEA. We will select interactions with confidence level A,B and C.
+```{r}
+## We load Dorothea Regulons
+data(dorothea_hs, package = "dorothea")
+regulons <- dorothea_hs %>%
+  dplyr::filter(confidence %in% c("A", "B","C"))
+```
+Take note that for DoRothEA, we will proceed differently than in PROGENy. We have an incredible amount of TFs that show activity, which indicates we will not be able to visualize all of them in the same heatmap. That is why we first compute TF activity enrichment analysis using the statistics from the differential expression analysis. This will allow us to select the TFs whose activity varies with the condition under the study.
+```{r}
+# First convert to df then sort on p.adj
+Results_DESeq<-as.data.frame(diffexpranalysisresults)
+Results_DESeq<-Results_DESeq[order(Results_DESeq$padj),]
+
+# It is important to set the parameter eset.filter to FALSE. In this case we set the minimum size of regulons to five (minsize).
+tf_activities_stat <- dorothea::run_viper(Results_DESeq, regulons,
+    options =  list(minsize = 5, eset.filter = FALSE, 
+    verbose = FALSE, nes = TRUE))
+```
+Now we will display the top 25 normalized enrichment scores (NES) for the TFs in a bar plot; similar to the one we generated for PROGENy.
+```{r}
+tf_activities_stat_top25 <- tf_activities_stat %>%
+    as.data.frame() %>% 
+    rownames_to_column(var = "GeneID") %>%
+    dplyr::rename(NES = "stat") %>%
+    dplyr::top_n(25, wt = abs(NES)) %>%
+    dplyr::arrange(NES) %>% 
+    dplyr::mutate(GeneID = factor(GeneID))
+
+ggplot(tf_activities_stat_top25,aes(x = reorder(GeneID, NES), y = NES)) + 
+    geom_bar(aes(fill = NES), stat = "identity") +
+    scale_fill_gradient2(low = "darkblue", high = "indianred", 
+        mid = "whitesmoke", midpoint = 0) + 
+    theme_minimal() +
+    theme(axis.title = element_text(face = "bold", size = 12),
+        axis.text.x = 
+            element_text(angle = 45, hjust = 1, size =10, face= "bold"),
+        axis.text.y = element_text(size =10, face= "bold"),
+        panel.grid.major = element_blank(), 
+        panel.grid.minor = element_blank()) +
+    xlab("Transcription Factors")
+```
+
+### Gaining insight into the most deregulated transcription factors
+To interpret the results it might be of interest to target the most deregulated TFs. 
+
+We will start with the under enriched transcription factors:
+1. E2F4
+2. MYC
+3. E2F1
+4. E2F2
+5. HBP1
+6. FOXM1
+7. STAT2
+8. TFDP1
+9. IRF2
+10. NFKB1
+11. RELA
+12. IRF1
+13. MNT
+14. SPI1
+15. TCF7
+16. CREB3L1
+17. RELB
+18. SP1
+19. E2F3
+20. RUNX1
+21. RELA
+22. HHEX
+23. ETV4
+24. CEBPA
+25. MYCN
+26. GATA4
+27. NR2C2
+28. MAF
+
+```{r}
+# Before starting this piece of the analysis we need to convert the rowname of results_Deseq to a column named ID
+Results_DESeq<-rownames_to_column(Results_DESeq)
+# change column name to "ID"
+names(Results_DESeq)[1]<-"ID"
+```
+
+
+```{r}
+# E2EF4 targets
+targets_E2F4 <- regulons$target[regulons$tf == "E2F4"]
+targets_E2F4<-as.data.frame(targets_E2F4)
+
+# include expression status
+Results_DESeq$expression = ifelse(Results_DESeq$padj < 0.05 & abs(Results_DESeq$log2FoldChange) >= 1, 
+                     ifelse(Results_DESeq$log2FoldChange> 1 ,'Up','Down'),
+                     'Stable')
+Results_DESeq<-as.data.frame(Results_DESeq)
+
+# Let's find a way to only select the downstream genes of E2F4
+PAS_E2F4_Targets<-Results_DESeq[Results_DESeq$ID %in% targets_E2F4$targets_E2F4,]
+
+# Add label column that only includes a label if it is up or down
+PAS_E2F4_Targets$delabel<- NA
+PAS_E2F4_Targets$delabel[PAS_E2F4_Targets$expression !="Stable"]<-PAS_E2F4_Targets$ID[PAS_E2F4_Targets$expression !="Stable"]
+
+
+library(ggplot2)
+
+E2F4 <- ggplot(data = PAS_E2F4_Targets, 
+            aes(x = PAS_E2F4_Targets$log2FoldChange, 
+                y = -log2(PAS_E2F4_Targets$padj), 
+                colour=expression,
+                label = PAS_E2F4_Targets$delabel)) +
+  geom_point(alpha=0.4, size=3.5) + geom_text()+
+  scale_color_manual(values=c("blue", "grey","red"))+
+  xlim(c(-4.5, 4.5)) +
+  geom_vline(xintercept=c(-1,1),lty=4,col="black",lwd=0.8) +
+  geom_hline(yintercept = 1.301,lty=4,col="black",lwd=0.8) +
+  labs(x="log2(fold change)",
+       y="-log10 (adj.p-value)",
+       title="E2F4 targets")  +
+  theme_bw()+
+  theme(plot.title = element_text(hjust = 0.5), 
+        legend.position="right", 
+        legend.title = element_blank())
+E2F4
+
+#--------------
+# MYC targets
+targets_MYC <- regulons$target[regulons$tf == "MYC"]
+targets_MYC<-as.data.frame(targets_MYC)
+
+# Create new df only containing deseq results of MYC targets # contains 351 genes
+PAS_MYC_Targets<-Results_DESeq[Results_DESeq$ID %in% targets_MYC$targets_MYC,]
+
+# Add label column that only includes a label if it is up or down
+PAS_MYC_Targets$delabel<-NA
+PAS_MYC_Targets$delabel[PAS_MYC_Targets$expression !="Stable"]<-PAS_MYC_Targets$ID[PAS_MYC_Targets$expression !="Stable"]
+
+MYC <- ggplot(data = PAS_MYC_Targets, 
+            aes(x = PAS_MYC_Targets$log2FoldChange, 
+                y = -log2(PAS_MYC_Targets$padj), 
+                colour=PAS_MYC_Targets$expression,
+                label = PAS_MYC_Targets$delabel)) + 
+  geom_point(alpha=0.4, size=3.5) + geom_text()+
+  scale_color_manual(values=c("blue", "grey","red"))+
+  xlim(c(-4.5, 4.5)) +
+  geom_vline(xintercept=c(-1,1),lty=4,col="black",lwd=0.8) +
+  geom_hline(yintercept = 1.301,lty=4,col="black",lwd=0.8) +
+  labs(x="log2(fold change)",
+       y="-log10 (adj.p-value)",
+       title="MYC targets")  +
+  theme_bw()+
+  theme(plot.title = element_text(hjust = 0.5), 
+        legend.position="right", 
+        legend.title = element_blank())
+MYC
+
+#----------------
+# E2F1 targets
+targets_E2F1 <- regulons$target[regulons$tf == "E2F1"]
+targets_E2F1<-as.data.frame(targets_E2F1)
+
+# Create new df only containing deseq results of MYC targets # contains 351 genes
+PAS_E2F1_Targets<-Results_DESeq[Results_DESeq$ID %in% targets_E2F1$targets_E2F1,]
+
+# Add label column that only includes a label if it is up or down
+PAS_E2F1_Targets$delabel<-NA
+PAS_E2F1_Targets$delabel[PAS_E2F1_Targets$expression !="Stable"]<-PAS_E2F1_Targets$ID[PAS_E2F1_Targets$expression !="Stable"]
+
+E2F1 <- ggplot(data = PAS_E2F1_Targets, 
+            aes(x = PAS_E2F1_Targets$log2FoldChange, 
+                y = -log2(PAS_E2F1_Targets$padj), 
+                colour=PAS_E2F1_Targets$expression,
+                label = PAS_E2F1_Targets$delabel)) + 
+  geom_point(alpha=0.4, size=3.5) + geom_text()+
+  scale_color_manual(values=c("grey","red"))+
+  xlim(c(-4.5, 4.5)) +
+  geom_vline(xintercept=c(-1,1),lty=4,col="black",lwd=0.8) +
+  geom_hline(yintercept = 1.301,lty=4,col="black",lwd=0.8) +
+  labs(x="log2(fold change)",
+       y="-log10 (adj.p-value)",
+       title="E2F1 targets")  +
+  theme_bw()+
+  theme(plot.title = element_text(hjust = 0.5), 
+        legend.position="right", 
+        legend.title = element_blank())
+E2F1
+
+#--------------
+# E2F2
+targets_E2F2 <- regulons$target[regulons$tf == "E2F2"]
+targets_E2F2<-as.data.frame(targets_E2F2)
+
+# Create new df only containing deseq results of MYC targets # contains 351 genes
+PAS_E2F2_Targets<-Results_DESeq[Results_DESeq$ID %in% targets_E2F2$targets_E2F2,]
+
+# Add label column that only includes a label if it is up or down
+PAS_E2F2_Targets$delabel<-NA
+PAS_E2F2_Targets$delabel[PAS_E2F2_Targets$expression !="Stable"]<-PAS_E2F2_Targets$ID[PAS_E2F2_Targets$expression !="Stable"]
+
+E2F2 <- ggplot(data = PAS_E2F2_Targets, 
+            aes(x = PAS_E2F2_Targets$log2FoldChange, 
+                y = -log2(PAS_E2F2_Targets$padj), 
+                colour=PAS_E2F2_Targets$expression,
+                label = PAS_E2F2_Targets$delabel)) + 
+  geom_point(alpha=0.4, size=3.5) + geom_text()+
+  scale_color_manual(values=c("GREY"))+
+  xlim(c(-4.5, 4.5)) +
+  geom_vline(xintercept=c(-1,1),lty=4,col="black",lwd=0.8) +
+  geom_hline(yintercept = 1.301,lty=4,col="black",lwd=0.8) +
+  labs(x="log2(fold change)",
+       y="-log10 (adj.p-value)",
+       title="E2F2 targets")  +
+  theme_bw()+
+  theme(plot.title = element_text(hjust = 0.5), 
+        legend.position="right", 
+        legend.title = element_blank())
+E2F2
+
+#We have determined all the E2F2 targets to be stable so why does it indicate that E2F2 would be enriched?
+
+# -----------------
+# HBP1
+targets_HBP1 <- regulons$target[regulons$tf == "HBP1"]
+targets_HBP1<-as.data.frame(targets_HBP1)
+
+# Create new df only containing deseq results of MYC targets # contains 351 genes
+PAS_HBP1_Targets<-Results_DESeq[Results_DESeq$ID %in% targets_HBP1$targets_HBP1,]
+
+# Add label column that only includes a label if it is up or down
+PAS_HBP1_Targets$delabel<-NA
+PAS_HBP1_Targets$delabel[PAS_HBP1_Targets$expression !="Stable"]<-PAS_HBP1_Targets$ID[PAS_HBP1_Targets$expression !="Stable"]
+
+HBP1 <- ggplot(data = PAS_HBP1_Targets, 
+            aes(x = PAS_HBP1_Targets$log2FoldChange, 
+                y = -log2(PAS_HBP1_Targets$padj), 
+                colour=PAS_HBP1_Targets$expression,
+                label = PAS_HBP1_Targets$delabel)) + 
+  geom_point(alpha=0.4, size=3.5) + geom_text()+
+  scale_color_manual(values=c("grey","red"))+
+  xlim(c(-4.5, 4.5)) +
+  geom_vline(xintercept=c(-1,1),lty=4,col="black",lwd=0.8) +
+  geom_hline(yintercept = 1.301,lty=4,col="black",lwd=0.8) +
+  labs(x="log2(fold change)",
+       y="-log10 (adj.p-value)",
+       title="HBP1 targets")  +
+  theme_bw()+
+  theme(plot.title = element_text(hjust = 0.5), 
+        legend.position="right", 
+        legend.title = element_blank())
+HBP1
+
+#-------
+# FOXM1
+targets_FOXM1 <- regulons$target[regulons$tf == "FOXM1"]
+targets_FOXM1<-as.data.frame(targets_FOXM1)
+
+# Create new df only containing deseq results of targets
+PAS_FOXM1_Targets<-Results_DESeq[Results_DESeq$ID %in% targets_FOXM1$targets_FOXM1,]
+
+# Add label column that only includes a label if it is up or down
+PAS_FOXM1_Targets$delabel<-NA
+PAS_FOXM1_Targets$delabel[PAS_FOXM1_Targets$expression !="Stable"]<-PAS_FOXM1_Targets$ID[PAS_FOXM1_Targets$expression !="Stable"]
+
+FOXM1 <- ggplot(data = PAS_FOXM1_Targets, 
+            aes(x = PAS_FOXM1_Targets$log2FoldChange, 
+                y = -log2(PAS_FOXM1_Targets$padj), 
+                colour=PAS_FOXM1_Targets$expression,
+                label = PAS_FOXM1_Targets$delabel)) + 
+  geom_point(alpha=0.4, size=3.5) + geom_text()+
+  scale_color_manual(values=c("grey","red"))+
+  xlim(c(-4.5, 4.5)) +
+  geom_vline(xintercept=c(-1,1),lty=4,col="black",lwd=0.8) +
+  geom_hline(yintercept = 1.301,lty=4,col="black",lwd=0.8) +
+  labs(x="log2(fold change)",
+       y="-log10 (adj.p-value)",
+       title="FOXM1 targets")  +
+  theme_bw()+
+  theme(plot.title = element_text(hjust = 0.5), 
+        legend.position="right", 
+        legend.title = element_blank())
+FOXM1
+
+#--------------------
+# STAT2
+targets_STAT2 <- regulons$target[regulons$tf == "STAT2"]
+targets_STAT2<-as.data.frame(targets_STAT2)
+
+# Create new df only containing deseq results of MYC targets # contains 351 genes
+PAS_STAT2_Targets<-Results_DESeq[Results_DESeq$ID %in% targets_STAT2$targets_STAT2,]
+
+# Add label column that only includes a label if it is up or down
+PAS_STAT2_Targets$delabel<-NA
+PAS_STAT2_Targets$delabel[PAS_STAT2_Targets$expression !="Stable"]<-PAS_STAT2_Targets$ID[PAS_STAT2_Targets$expression !="Stable"]
+
+STAT2 <- ggplot(data = PAS_STAT2_Targets, 
+            aes(x = PAS_STAT2_Targets$log2FoldChange, 
+                y = -log2(PAS_STAT2_Targets$padj), 
+                colour=PAS_STAT2_Targets$expression,
+                label = PAS_STAT2_Targets$delabel)) + 
+  geom_point(alpha=0.4, size=3.5) + geom_text()+
+  scale_color_manual(values=c("grey","red"))+
+  xlim(c(-4.5, 4.5)) +
+  geom_vline(xintercept=c(-1,1),lty=4,col="black",lwd=0.8) +
+  geom_hline(yintercept = 1.301,lty=4,col="black",lwd=0.8) +
+  labs(x="log2(fold change)",
+       y="-log10 (adj.p-value)",
+       title="STAT2 targets")  +
+  theme_bw()+
+  theme(plot.title = element_text(hjust = 0.5), 
+        legend.position="right", 
+        legend.title = element_blank())
+STAT2
+
+#---------------
+# TFDP1
+targets_TFDP1 <- regulons$target[regulons$tf == "TFDP1"]
+targets_TFDP1<-as.data.frame(targets_TFDP1)
+
+# Create new df only containing deseq results of targets
+PAS_TFDP1_Targets<-Results_DESeq[Results_DESeq$ID %in% targets_TFDP1$targets_TFDP1 ,]
+
+# Add label column that only includes a label if it is up or down
+PAS_TFDP1_Targets$delabel<-NA
+PAS_TFDP1_Targets$delabel[PAS_TFDP1_Targets$expression !="Stable"]<-PAS_TFDP1_Targets$ID[PAS_TFDP1_Targets$expression !="Stable"]
+
+TFDP1 <- ggplot(data = PAS_TFDP1_Targets, 
+            aes(x = PAS_TFDP1_Targets$log2FoldChange, 
+                y = -log2(PAS_TFDP1_Targets$padj), 
+                colour=PAS_TFDP1_Targets$expression,
+                label = PAS_TFDP1_Targets$delabel)) + 
+  geom_point(alpha=0.4, size=3.5) + geom_text()+
+  scale_color_manual(values=c("grey","red"))+
+  xlim(c(-4.5, 4.5)) +
+  geom_vline(xintercept=c(-1,1),lty=4,col="black",lwd=0.8) +
+  geom_hline(yintercept = 1.301,lty=4,col="black",lwd=0.8) +
+  labs(x="log2(fold change)",
+       y="-log10 (adj.p-value)",
+       title="TFDP1 targets")  +
+  theme_bw()+
+  theme(plot.title = element_text(hjust = 0.5), 
+        legend.position="right", 
+        legend.title = element_blank())
+TFDP1
+
+#-------------------------
+# IRF2
+targets_IRF2 <- regulons$target[regulons$tf == "IRF2"]
+targets_IRF2<-as.data.frame(targets_IRF2)
+
+# Create new df only containing deseq results of targets
+PAS_IRF2_Targets<-Results_DESeq[Results_DESeq$ID %in% targets_IRF2$targets_IRF2 ,]
+
+# Add label column that only includes a label if it is up or down
+PAS_IRF2_Targets$delabel<-NA
+PAS_IRF2_Targets$delabel[PAS_IRF2_Targets$expression !="Stable"]<-PAS_IRF2_Targets$ID[PAS_IRF2_Targets$expression !="Stable"]
+
+IRF2 <- ggplot(data = PAS_IRF2_Targets, 
+            aes(x = PAS_IRF2_Targets$log2FoldChange, 
+                y = -log2(PAS_IRF2_Targets$padj), 
+                colour=PAS_IRF2_Targets$expression,
+                label = PAS_IRF2_Targets$delabel)) + 
+  geom_point(alpha=0.4, size=3.5) + geom_text()+
+  scale_color_manual(values=c("grey","red"))+
+  xlim(c(-4.5, 4.5)) +
+  geom_vline(xintercept=c(-1,1),lty=4,col="black",lwd=0.8) +
+  geom_hline(yintercept = 1.301,lty=4,col="black",lwd=0.8) +
+  labs(x="log2(fold change)",
+       y="-log10 (adj.p-value)",
+       title="IRF2 targets")  +
+  theme_bw()+
+  theme(plot.title = element_text(hjust = 0.5), 
+        legend.position="right", 
+        legend.title = element_blank())
+IRF2
+
+#---------------
+# NFKB1
+targets_NFKB1 <- regulons$target[regulons$tf == "NFKB1"]
+targets_NFKB1<-as.data.frame(targets_NFKB1)
+
+# Create new df only containing deseq results of targets
+PAS_NFKB1_Targets<-Results_DESeq[Results_DESeq$ID %in% targets_NFKB1$targets_NFKB1 ,]
+
+# Add label column that only includes a label if it is up or down
+PAS_NFKB1_Targets$delabel<-NA
+PAS_NFKB1_Targets$delabel[PAS_NFKB1_Targets$expression !="Stable"]<-PAS_NFKB1_Targets$ID[PAS_NFKB1_Targets$expression !="Stable"]
+
+NFKB1<- ggplot(data = PAS_NFKB1_Targets, 
+            aes(x = PAS_NFKB1_Targets$log2FoldChange, 
+                y = -log2(PAS_NFKB1_Targets$padj), 
+                colour=PAS_NFKB1_Targets$expression,
+                label = PAS_NFKB1_Targets$delabel)) + 
+  geom_point(alpha=0.4, size=3.5) + geom_text()+
+  scale_color_manual(values=c("blue","grey","red"))+
+  xlim(c(-4.5, 4.5)) +
+  geom_vline(xintercept=c(-1,1),lty=4,col="black",lwd=0.8) +
+  geom_hline(yintercept = 1.301,lty=4,col="black",lwd=0.8) +
+  labs(x="log2(fold change)",
+       y="-log10 (adj.p-value)",
+       title="NFKB1 targets")  +
+  theme_bw()+
+  theme(plot.title = element_text(hjust = 0.5), 
+        legend.position="right", 
+        legend.title = element_blank())
+NFKB1
+
+# ----------------
+# NFYB
+targets_NFYB <- regulons$target[regulons$tf == "NFYB"]
+targets_NFYB<-as.data.frame(targets_NFYB)
+
+# Create new df only containing deseq results of targets
+PAS_NFYB_Targets<-Results_DESeq[Results_DESeq$ID %in% targets_NFYB$targets_NFYB ,]
+
+# Add label column that only includes a label if it is up or down
+PAS_NFYB_Targets$delabel<-NA
+PAS_NFYB_Targets$delabel[PAS_NFYB_Targets$expression !="Stable"]<-PAS_NFYB_Targets$ID[PAS_NFYB_Targets$expression !="Stable"]
+
+NFYB <- ggplot(data = PAS_NFYB_Targets, 
+            aes(x = PAS_NFYB_Targets$log2FoldChange, 
+                y = -log2(PAS_NFYB_Targets$padj), 
+                colour=PAS_NFYB_Targets$expression,
+                label = PAS_NFYB_Targets$delabel)) + 
+  geom_point(alpha=0.4, size=3.5) + geom_text()+
+  scale_color_manual(values=c("grey","red"))+
+  xlim(c(-4.5, 4.5)) +
+  geom_vline(xintercept=c(-1,1),lty=4,col="black",lwd=0.8) +
+  geom_hline(yintercept = 1.301,lty=4,col="black",lwd=0.8) +
+  labs(x="log2(fold change)",
+       y="-log10 (adj.p-value)",
+       title="NFYB targets")  +
+  theme_bw()+
+  theme(plot.title = element_text(hjust = 0.5), 
+        legend.position="right", 
+        legend.title = element_blank())
+NFYB
+
+# ----------------
+# IRF1
+targets_IRF1 <- regulons$target[regulons$tf == "IRF1"]
+targets_IRF1<-as.data.frame(targets_IRF1)
+
+# Create new df only containing deseq results of targets
+PAS_IRF1_Targets<-Results_DESeq[Results_DESeq$ID %in% targets_IRF1$targets_IRF1 ,]
+
+# Add label column that only includes a label if it is up or down
+PAS_IRF1_Targets$delabel<-NA
+PAS_IRF1_Targets$delabel[PAS_IRF1_Targets$expression !="Stable"]<-PAS_IRF1_Targets$ID[PAS_IRF1_Targets$expression !="Stable"]
+
+IRF1 <- ggplot(data = PAS_IRF1_Targets, 
+            aes(x = PAS_IRF1_Targets$log2FoldChange, 
+                y = -log2(PAS_IRF1_Targets$padj), 
+                colour=PAS_IRF1_Targets$expression,
+                label = PAS_IRF1_Targets$delabel)) + 
+  geom_point(alpha=0.4, size=3.5) + geom_text()+
+  scale_color_manual(values=c("blue","grey"))+
+  xlim(c(-4.5, 4.5)) +
+  geom_vline(xintercept=c(-1,1),lty=4,col="black",lwd=0.8) +
+  geom_hline(yintercept = 1.301,lty=4,col="black",lwd=0.8) +
+  labs(x="log2(fold change)",
+       y="-log10 (adj.p-value)",
+       title="IRF1 targets")  +
+  theme_bw()+
+  theme(plot.title = element_text(hjust = 0.5), 
+        legend.position="right", 
+        legend.title = element_blank())
+IRF1
+
+#-----------
+# MNT
+targets_MNT <- regulons$target[regulons$tf == "MNT"]
+targets_MNT<-as.data.frame(targets_MNT)
+
+# Create new df only containing deseq results of targets
+PAS_MNT_Targets<-Results_DESeq[Results_DESeq$ID %in% targets_MNT$targets_MNT ,]
+
+# Add label column that only includes a label if it is up or down
+PAS_MNT_Targets$delabel<-NA
+PAS_MNT_Targets$delabel[PAS_MNT_Targets$expression !="Stable"]<-PAS_MNT_Targets$ID[PAS_MNT_Targets$expression !="Stable"]
+
+MNT <- ggplot(data = PAS_MNT_Targets, 
+            aes(x = PAS_MNT_Targets$log2FoldChange, 
+                y = -log2(PAS_MNT_Targets$padj), 
+                colour=PAS_MNT_Targets$expression,
+                label = PAS_MNT_Targets$delabel)) + 
+  geom_point(alpha=0.4, size=3.5) + geom_text()+
+  scale_color_manual(values=c("grey","red"))+
+  xlim(c(-4.5, 4.5)) +
+  geom_vline(xintercept=c(-1,1),lty=4,col="black",lwd=0.8) +
+  geom_hline(yintercept = 1.301,lty=4,col="black",lwd=0.8) +
+  labs(x="log2(fold change)",
+       y="-log10 (adj.p-value)",
+       title="MNT targets")  +
+  theme_bw()+
+  theme(plot.title = element_text(hjust = 0.5), 
+        legend.position="right", 
+        legend.title = element_blank())
+MNT
+
+
+
+#----------------
+#SPI1
+targets_SPI1 <- regulons$target[regulons$tf == "SPI1"]
+targets_SPI1<-as.data.frame(targets_SPI1)
+
+# Create new df only containing deseq results of targets
+PAS_SPI1_Targets<-Results_DESeq[Results_DESeq$ID %in% targets_SPI1$targets_SPI1 ,]
+
+# Add label column that only includes a label if it is up or down
+PAS_SPI1_Targets$delabel<-NA
+PAS_SPI1_Targets$delabel[PAS_SPI1_Targets$expression !="Stable"]<-PAS_SPI1_Targets$ID[PAS_SPI1_Targets$expression !="Stable"]
+
+SPI1 <- ggplot(data = PAS_SPI1_Targets, 
+            aes(x = PAS_SPI1_Targets$log2FoldChange, 
+                y = -log2(PAS_SPI1_Targets$padj), 
+                colour=PAS_SPI1_Targets$expression,
+                label = PAS_SPI1_Targets$delabel)) + 
+  geom_point(alpha=0.4, size=3.5) + geom_text()+
+  scale_color_manual(values=c("blue","grey","red"))+
+  xlim(c(-4.5, 4.5)) +
+  geom_vline(xintercept=c(-1,1),lty=4,col="black",lwd=0.8) +
+  geom_hline(yintercept = 1.301,lty=4,col="black",lwd=0.8) +
+  labs(x="log2(fold change)",
+       y="-log10 (adj.p-value)",
+       title="SPI1 targets")  +
+  theme_bw()+
+  theme(plot.title = element_text(hjust = 0.5), 
+        legend.position="right", 
+        legend.title = element_blank())
+SPI1
+
+# ----------------
+# TCF7
+targets_TCF7 <- regulons$target[regulons$tf == "TCF7"]
+targets_TCF7<-as.data.frame(targets_TCF7)
+
+# Create new df only containing deseq results of targets
+PAS_TCF7_Targets<-Results_DESeq[Results_DESeq$ID %in% targets_TCF7$targets_TCF7 ,]
+
+# Add label column that only includes a label if it is up or down
+PAS_TCF7_Targets$delabel<-NA
+PAS_TCF7_Targets$delabel[PAS_TCF7_Targets$expression !="Stable"]<-PAS_TCF7_Targets$ID[PAS_TCF7_Targets$expression !="Stable"]
+
+TCF7 <- ggplot(data = PAS_TCF7_Targets, 
+            aes(x = PAS_TCF7_Targets$log2FoldChange, 
+                y = -log2(PAS_TCF7_Targets$padj), 
+                colour=PAS_TCF7_Targets$expression,
+                label = PAS_TCF7_Targets$delabel)) + 
+  geom_point(alpha=0.4, size=3.5) + geom_text()+
+  scale_color_manual(values=c("grey","red"))+
+  xlim(c(-4.5, 4.5)) +
+  geom_vline(xintercept=c(-1,1),lty=4,col="black",lwd=0.8) +
+  geom_hline(yintercept = 1.301,lty=4,col="black",lwd=0.8) +
+  labs(x="log2(fold change)",
+       y="-log10 (adj.p-value)",
+       title="TCF7 targets")  +
+  theme_bw()+
+  theme(plot.title = element_text(hjust = 0.5), 
+        legend.position="right", 
+        legend.title = element_blank())
+TCF7
+
+#---------------
+# CREB3L1
+targets_CREB3L1 <- regulons$target[regulons$tf == "CREB3L1"]
+targets_CREB3L1<-as.data.frame(targets_CREB3L1)
+
+# Create new df only containing deseq results of targets
+PAS_CREB3L1_Targets<-Results_DESeq[Results_DESeq$ID %in% targets_CREB3L1$targets_CREB3L1 ,]
+
+# Add label column that only includes a label if it is up or down
+PAS_CREB3L1_Targets$delabel<-NA
+PAS_CREB3L1_Targets$delabel[PAS_CREB3L1_Targets$expression !="Stable"]<-PAS_CREB3L1_Targets$ID[PAS_CREB3L1_Targets$expression !="Stable"]
+
+CREB3L1 <- ggplot(data = PAS_CREB3L1_Targets, 
+            aes(x = PAS_CREB3L1_Targets$log2FoldChange, 
+                y = -log2(PAS_CREB3L1_Targets$padj), 
+                colour=PAS_CREB3L1_Targets$expression,
+                label = PAS_CREB3L1_Targets$delabel)) + 
+  geom_point(alpha=0.4, size=3.5) + geom_text()+
+  scale_color_manual(values=c("grey","red"))+
+  xlim(c(-4.5, 4.5)) +
+  geom_vline(xintercept=c(-1,1),lty=4,col="black",lwd=0.8) +
+  geom_hline(yintercept = 1.301,lty=4,col="black",lwd=0.8) +
+  labs(x="log2(fold change)",
+       y="-log10 (adj.p-value)",
+       title="CREB3L1 targets")  +
+  theme_bw()+
+  theme(plot.title = element_text(hjust = 0.5), 
+        legend.position="right", 
+        legend.title = element_blank())
+CREB3L1
+
+# ----------------
+# RELB
+targets_RELB <- regulons$target[regulons$tf == "RELB"]
+targets_RELB<-as.data.frame(targets_RELB)
+
+# Create new df only containing deseq results of targets
+PAS_RELB_Targets<-Results_DESeq[Results_DESeq$ID %in% targets_RELB$targets_RELB ,]
+
+# Add label column that only includes a label if it is up or down
+PAS_RELB_Targets$delabel<-NA
+PAS_RELB_Targets$delabel[PAS_RELB_Targets$expression !="Stable"]<-PAS_RELB_Targets$ID[PAS_RELB_Targets$expression !="Stable"]
+
+RELB <- ggplot(data = PAS_RELB_Targets, 
+            aes(x = PAS_RELB_Targets$log2FoldChange, 
+                y = -log2(PAS_RELB_Targets$padj), 
+                colour=PAS_RELB_Targets$expression,
+                label = PAS_RELB_Targets$delabel)) + 
+  geom_point(alpha=0.4, size=3.5) + geom_text()+
+  scale_color_manual(values=c("grey","red"))+
+  xlim(c(-4.5, 4.5)) +
+  geom_vline(xintercept=c(-1,1),lty=4,col="black",lwd=0.8) +
+  geom_hline(yintercept = 1.301,lty=4,col="black",lwd=0.8) +
+  labs(x="log2(fold change)",
+       y="-log10 (adj.p-value)",
+       title="RELB targets")  +
+  theme_bw()+
+  theme(plot.title = element_text(hjust = 0.5), 
+        legend.position="right", 
+        legend.title = element_blank())
+RELB
+
+# --------------
+# SP1
+targets_SP1 <- regulons$target[regulons$tf == "SP1"]
+targets_SP1<-as.data.frame(targets_SP1)
+
+# Create new df only containing deseq results of targets
+PAS_SP1_Targets<-Results_DESeq[Results_DESeq$ID %in% targets_SP1$targets_SP1 ,]
+
+# Add label column that only includes a label if it is up or down
+PAS_SP1_Targets$delabel<-NA
+PAS_SP1_Targets$delabel[PAS_SP1_Targets$expression !="Stable"]<-PAS_SP1_Targets$ID[PAS_SP1_Targets$expression !="Stable"]
+
+SP1 <- ggplot(data = PAS_SP1_Targets, 
+            aes(x = PAS_SP1_Targets$log2FoldChange, 
+                y = -log2(PAS_SP1_Targets$padj), 
+                colour=PAS_SP1_Targets$expression,
+                label = PAS_SP1_Targets$delabel)) + 
+  geom_point(alpha=0.4, size=3.5) + geom_text()+
+  scale_color_manual(values=c("blue","grey","red"))+
+  xlim(c(-4.5, 4.5)) +
+  geom_vline(xintercept=c(-1,1),lty=4,col="black",lwd=0.8) +
+  geom_hline(yintercept = 1.301,lty=4,col="black",lwd=0.8) +
+  labs(x="log2(fold change)",
+       y="-log10 (adj.p-value)",
+       title="SP1 targets")  +
+  theme_bw()+
+  theme(plot.title = element_text(hjust = 0.5), 
+        legend.position="right", 
+        legend.title = element_blank())
+SP1
+
+#------------
+# E2F3
+targets_E2F3 <- regulons$target[regulons$tf == "E2F3"]
+targets_E2F3<-as.data.frame(targets_E2F3)
+
+# Create new df only containing deseq results of targets
+PAS_E2F3_Targets<-Results_DESeq[Results_DESeq$ID %in% targets_E2F3$targets_E2F3 ,]
+
+# Add label column that only includes a label if it is up or down
+PAS_E2F3_Targets$delabel<-NA
+PAS_E2F3_Targets$delabel[PAS_E2F3_Targets$expression !="Stable"]<-PAS_E2F3_Targets$ID[PAS_E2F3_Targets$expression !="Stable"]
+
+E2F3 <- ggplot(data = PAS_E2F3_Targets, 
+            aes(x = PAS_E2F3_Targets$log2FoldChange, 
+                y = -log2(PAS_E2F3_Targets$padj), 
+                colour=PAS_E2F3_Targets$expression,
+                label = PAS_E2F3_Targets$delabel)) + 
+  geom_point(alpha=0.4, size=3.5) + geom_text()+
+  scale_color_manual(values=c("grey","red"))+
+  xlim(c(-4.5, 4.5)) +
+  geom_vline(xintercept=c(-1,1),lty=4,col="black",lwd=0.8) +
+  geom_hline(yintercept = 1.301,lty=4,col="black",lwd=0.8) +
+  labs(x="log2(fold change)",
+       y="-log10 (adj.p-value)",
+       title="E2F3 targets")  +
+  theme_bw()+
+  theme(plot.title = element_text(hjust = 0.5), 
+        legend.position="right", 
+        legend.title = element_blank())
+E2F3
+
+#---------------
+#RUNX1
+targets_RUNX1 <- regulons$target[regulons$tf == "RUNX1"]
+targets_RUNX1<-as.data.frame(targets_RUNX1)
+
+# Create new df only containing deseq results of targets
+PAS_RUNX1_Targets<-Results_DESeq[Results_DESeq$ID %in% targets_RUNX1$targets_RUNX1 ,]
+
+# Add label column that only includes a label if it is up or down
+PAS_RUNX1_Targets$delabel<-NA
+PAS_RUNX1_Targets$delabel[PAS_RUNX1_Targets$expression !="Stable"]<-PAS_RUNX1_Targets$ID[PAS_RUNX1_Targets$expression !="Stable"]
+
+RUNX1 <- ggplot(data = PAS_RUNX1_Targets, 
+            aes(x = PAS_RUNX1_Targets$log2FoldChange, 
+                y = -log2(PAS_RUNX1_Targets$padj), 
+                colour=PAS_RUNX1_Targets$expression,
+                label = PAS_RUNX1_Targets$delabel)) + 
+  geom_point(alpha=0.4, size=3.5) + geom_text()+
+  scale_color_manual(values=c("grey","red"))+
+  xlim(c(-4.5, 4.5)) +
+  geom_vline(xintercept=c(-1,1),lty=4,col="black",lwd=0.8) +
+  geom_hline(yintercept = 1.301,lty=4,col="black",lwd=0.8) +
+  labs(x="log2(fold change)",
+       y="-log10 (adj.p-value)",
+       title="RUNX1 targets")  +
+  theme_bw()+
+  theme(plot.title = element_text(hjust = 0.5), 
+        legend.position="right", 
+        legend.title = element_blank())
+RUNX1
+
+# ----------------
+# RELA
+targets_RELA <- regulons$target[regulons$tf == "RELA"]
+targets_RELA<-as.data.frame(targets_RELA)
+
+# Create new df only containing deseq results of targets
+PAS_RELA_Targets<-Results_DESeq[Results_DESeq$ID %in% targets_RELA$targets_RELA ,]
+
+# Add label column that only includes a label if it is up or down
+PAS_RELA_Targets$delabel<-NA
+PAS_RELA_Targets$delabel[PAS_RELA_Targets$expression !="Stable"]<-PAS_RELA_Targets$ID[PAS_RELA_Targets$expression !="Stable"]
+
+RELA <- ggplot(data = PAS_RELA_Targets, 
+            aes(x = PAS_RELA_Targets$log2FoldChange, 
+                y = -log2(PAS_RELA_Targets$padj), 
+                colour=PAS_RELA_Targets$expression,
+                label = PAS_RELA_Targets$delabel)) + 
+  geom_point(alpha=0.4, size=3.5) + geom_text()+
+  scale_color_manual(values=c("blue","grey","red"))+
+  xlim(c(-4.5, 4.5)) +
+  geom_vline(xintercept=c(-1,1),lty=4,col="black",lwd=0.8) +
+  geom_hline(yintercept = 1.301,lty=4,col="black",lwd=0.8) +
+  labs(x="log2(fold change)",
+       y="-log10 (adj.p-value)",
+       title="RELA targets")  +
+  theme_bw()+
+  theme(plot.title = element_text(hjust = 0.5), 
+        legend.position="right", 
+        legend.title = element_blank())
+RELA
+
+# -------------
+# HHEX
+targets_HHEX <- regulons$target[regulons$tf == "HHEX"]
+targets_HHEX<-as.data.frame(targets_HHEX)
+
+# Create new df only containing deseq results of targets
+PAS_HHEX_Targets<-Results_DESeq[Results_DESeq$ID %in% targets_HHEX$targets_HHEX ,]
+
+# Add label column that only includes a label if it is up or down
+PAS_HHEX_Targets$delabel<-NA
+PAS_HHEX_Targets$delabel[PAS_HHEX_Targets$expression !="Stable"]<-PAS_HHEX_Targets$ID[PAS_HHEX_Targets$expression !="Stable"]
+
+HHEX <- ggplot(data = PAS_HHEX_Targets, 
+            aes(x = PAS_HHEX_Targets$log2FoldChange, 
+                y = -log2(PAS_HHEX_Targets$padj), 
+                colour=PAS_HHEX_Targets$expression,
+                label = PAS_HHEX_Targets$delabel)) + 
+  geom_point(alpha=0.4, size=3.5) + geom_text()+
+  scale_color_manual(values=c("grey","red"))+
+  xlim(c(-4.5, 4.5)) +
+  geom_vline(xintercept=c(-1,1),lty=4,col="black",lwd=0.8) +
+  geom_hline(yintercept = 1.301,lty=4,col="black",lwd=0.8) +
+  labs(x="log2(fold change)",
+       y="-log10 (adj.p-value)",
+       title="HHEX targets")  +
+  theme_bw()+
+  theme(plot.title = element_text(hjust = 0.5), 
+        legend.position="right", 
+        legend.title = element_blank())
+HHEX
+
+#-----------------
+# ETV4
+targets_ETV4 <- regulons$target[regulons$tf == "ETV4"]
+targets_ETV4<-as.data.frame(targets_ETV4)
+
+# Create new df only containing deseq results of targets
+PAS_ETV4_Targets<-Results_DESeq[Results_DESeq$ID %in% targets_ETV4$targets_ETV4 ,]
+
+# Add label column that only includes a label if it is up or down
+PAS_ETV4_Targets$delabel<-NA
+PAS_ETV4_Targets$delabel[PAS_ETV4_Targets$expression !="Stable"]<-PAS_ETV4_Targets$ID[PAS_ETV4_Targets$expression !="Stable"]
+
+ETV4 <- ggplot(data = PAS_ETV4_Targets, 
+            aes(x = PAS_ETV4_Targets$log2FoldChange, 
+                y = -log2(PAS_ETV4_Targets$padj), 
+                colour=PAS_ETV4_Targets$expression,
+                label = PAS_ETV4_Targets$delabel)) + 
+  geom_point(alpha=0.4, size=3.5) + geom_text()+
+  scale_color_manual(values=c("blue","grey"))+
+  xlim(c(-4.5, 4.5)) +
+  geom_vline(xintercept=c(-1,1),lty=4,col="black",lwd=0.8) +
+  geom_hline(yintercept = 1.301,lty=4,col="black",lwd=0.8) +
+  labs(x="log2(fold change)",
+       y="-log10 (adj.p-value)",
+       title="ETV4 targets")  +
+  theme_bw()+
+  theme(plot.title = element_text(hjust = 0.5), 
+        legend.position="right", 
+        legend.title = element_blank())
+ETV4
+
+#-----------
+#CEBPA
+targets_CEBPA <- regulons$target[regulons$tf == "CEBPA"]
+targets_CEBPA<-as.data.frame(targets_CEBPA)
+
+# Create new df only containing deseq results of targets
+PAS_CEBPA_Targets<-Results_DESeq[Results_DESeq$ID %in% targets_CEBPA$targets_CEBPA ,]
+
+# Add label column that only includes a label if it is up or down
+PAS_CEBPA_Targets$delabel<-NA
+PAS_CEBPA_Targets$delabel[PAS_CEBPA_Targets$expression !="Stable"]<-PAS_CEBPA_Targets$ID[PAS_CEBPA_Targets$expression !="Stable"]
+
+CEBPA <- ggplot(data = PAS_CEBPA_Targets, 
+            aes(x = PAS_CEBPA_Targets$log2FoldChange, 
+                y = -log2(PAS_CEBPA_Targets$padj), 
+                colour=PAS_CEBPA_Targets$expression,
+                label = PAS_CEBPA_Targets$delabel)) + 
+  geom_point(alpha=0.4, size=3.5) + geom_text()+
+  scale_color_manual(values=c("blue","grey","red"))+
+  xlim(c(-4.5, 4.5)) +
+  geom_vline(xintercept=c(-1,1),lty=4,col="black",lwd=0.8) +
+  geom_hline(yintercept = 1.301,lty=4,col="black",lwd=0.8) +
+  labs(x="log2(fold change)",
+       y="-log10 (adj.p-value)",
+       title="CEBPA targets")  +
+  theme_bw()+
+  theme(plot.title = element_text(hjust = 0.5), 
+        legend.position="right", 
+        legend.title = element_blank())
+CEBPA
+
+#-----------
+# MYCN
+targets_MYCN <- regulons$target[regulons$tf == "MYCN"]
+targets_MYCN<-as.data.frame(targets_MYCN)
+
+# Create new df only containing deseq results of targets
+PAS_MYCN_Targets<-Results_DESeq[Results_DESeq$ID %in% targets_MYCN$targets_MYCN ,]
+
+# Add label column that only includes a label if it is up or down
+PAS_MYCN_Targets$delabel<-NA
+PAS_MYCN_Targets$delabel[PAS_MYCN_Targets$expression !="Stable"]<-PAS_MYCN_Targets$ID[PAS_MYCN_Targets$expression !="Stable"]
+
+MYCN <- ggplot(data = PAS_MYCN_Targets, 
+            aes(x = PAS_MYCN_Targets$log2FoldChange, 
+                y = -log2(PAS_MYCN_Targets$padj), 
+                colour=PAS_MYCN_Targets$expression,
+                label = PAS_MYCN_Targets$delabel)) + 
+  geom_point(alpha=0.4, size=3.5) + geom_text()+
+  scale_color_manual(values=c("grey","red"))+
+  xlim(c(-4.5, 4.5)) +
+  geom_vline(xintercept=c(-1,1),lty=4,col="black",lwd=0.8) +
+  geom_hline(yintercept = 1.301,lty=4,col="black",lwd=0.8) +
+  labs(x="log2(fold change)",
+       y="-log10 (adj.p-value)",
+       title="MYCN targets")  +
+  theme_bw()+
+  theme(plot.title = element_text(hjust = 0.5), 
+        legend.position="right", 
+        legend.title = element_blank())
+MYCN
+
+#-----------
+# GATA4
+targets_GATA4 <- regulons$target[regulons$tf == "GATA4"]
+targets_GATA4<-as.data.frame(targets_GATA4)
+
+# Create new df only containing deseq results of targets
+PAS_GATA4_Targets<-Results_DESeq[Results_DESeq$ID %in% targets_GATA4$targets_GATA4 ,]
+
+# Add label column that only includes a label if it is up or down
+PAS_GATA4_Targets$delabel<-NA
+PAS_GATA4_Targets$delabel[PAS_GATA4_Targets$expression !="Stable"]<-PAS_GATA4_Targets$ID[PAS_GATA4_Targets$expression !="Stable"]
+
+GATA4 <- ggplot(data = PAS_GATA4_Targets, 
+            aes(x = PAS_GATA4_Targets$log2FoldChange, 
+                y = -log2(PAS_GATA4_Targets$padj), 
+                colour=PAS_GATA4_Targets$expression,
+                label = PAS_GATA4_Targets$delabel)) + 
+  geom_point(alpha=0.4, size=3.5) + geom_text()+
+  scale_color_manual(values=c("grey","red"))+
+  xlim(c(-4.5, 4.5)) +
+  geom_vline(xintercept=c(-1,1),lty=4,col="black",lwd=0.8) +
+  geom_hline(yintercept = 1.301,lty=4,col="black",lwd=0.8) +
+  labs(x="log2(fold change)",
+       y="-log10 (adj.p-value)",
+       title="GATA4 targets")  +
+  theme_bw()+
+  theme(plot.title = element_text(hjust = 0.5), 
+        legend.position="right", 
+        legend.title = element_blank())
+GATA4
+
+# ----------------
+# NR2C2
+targets_NR2C2 <- regulons$target[regulons$tf == "NR2C2"]
+targets_NR2C2<-as.data.frame(targets_NR2C2)
+
+# Create new df only containing deseq results of targets
+PAS_NR2C2_Targets<-Results_DESeq[Results_DESeq$ID %in% targets_NR2C2$targets_NR2C2 ,]
+
+# Add label column that only includes a label if it is up or down
+PAS_NR2C2_Targets$delabel<-NA
+PAS_NR2C2_Targets$delabel[PAS_NR2C2_Targets$expression !="Stable"]<-PAS_NR2C2_Targets$ID[PAS_NR2C2_Targets$expression !="Stable"]
+
+NR2C2 <- ggplot(data = PAS_NR2C2_Targets, 
+            aes(x = PAS_NR2C2_Targets$log2FoldChange, 
+                y = -log2(PAS_NR2C2_Targets$padj), 
+                colour=PAS_NR2C2_Targets$expression,
+                label = PAS_NR2C2_Targets$delabel)) + 
+  geom_point(alpha=0.4, size=3.5) + geom_text()+
+  scale_color_manual(values=c("grey","red"))+
+  xlim(c(-4.5, 4.5)) +
+  geom_vline(xintercept=c(-1,1),lty=4,col="black",lwd=0.8) +
+  geom_hline(yintercept = 1.301,lty=4,col="black",lwd=0.8) +
+  labs(x="log2(fold change)",
+       y="-log10 (adj.p-value)",
+       title="NR2C2 targets")  +
+  theme_bw()+
+  theme(plot.title = element_text(hjust = 0.5), 
+        legend.position="right", 
+        legend.title = element_blank())
+NR2C2
+#-----------
+#MAF
+targets_MAF <- regulons$target[regulons$tf == "MAF"]
+targets_MAF<-as.data.frame(targets_MAF)
+
+# Create new df only containing deseq results of targets
+PAS_MAF_Targets<-Results_DESeq[Results_DESeq$ID %in% targets_MAF$targets_MAF ,]
+
+# Add label column that only includes a label if it is up or down
+PAS_MAF_Targets$delabel<-NA
+PAS_MAF_Targets$delabel[PAS_MAF_Targets$expression !="Stable"]<-PAS_MAF_Targets$ID[PAS_MAF_Targets$expression !="Stable"]
+
+MAF <- ggplot(data = PAS_MAF_Targets, 
+            aes(x = PAS_MAF_Targets$log2FoldChange, 
+                y = -log2(PAS_MAF_Targets$padj), 
+                colour=PAS_MAF_Targets$expression,
+                label = PAS_MAF_Targets$delabel)) + 
+  geom_point(alpha=0.4, size=3.5) + geom_text()+
+  scale_color_manual(values=c("grey","red"))+
+  xlim(c(-4.5, 4.5)) +
+  geom_vline(xintercept=c(-1,1),lty=4,col="black",lwd=0.8) +
+  geom_hline(yintercept = 1.301,lty=4,col="black",lwd=0.8) +
+  labs(x="log2(fold change)",
+       y="-log10 (adj.p-value)",
+       title="MAF targets")  +
+  theme_bw()+
+  theme(plot.title = element_text(hjust = 0.5), 
+        legend.position="right", 
+        legend.title = element_blank())
+MAF
+#-----------------
+# Combination figure 
+library(cowplot)
+#install.packages("ggpubr")
+library(ggpubr)
+#ggarrange(MYC, E2F1, E2F2,HBP1,FOXM1,STAT2,TFDP1,IRF2,NFKB1,RELA,IRF1,MNT,SPI1,TCF7,CREB3L1,RELB,SP1,E2F3,RUNX1,RELA,HHEX,ETV4,CEBPA,MYCN,GATA4,NR2C2,MAF +  rremove("x.text"),
+#         ncol =4 , nrow = 7)
+```
+```{r, fig.width=20, fig.height=30, warning= FALSE}
+library(ggpubr)
+library(cowplot)
+
+
+plot_grid(MYC, E2F1, E2F2,HBP1,FOXM1,STAT2,TFDP1,IRF2,NFKB1,RELA,IRF1,MNT,SPI1,TCF7,CREB3L1,RELB,SP1,E2F3,RUNX1,RELA,HHEX,ETV4,CEBPA,MYCN,GATA4,NR2C2,MAF, labels = "auto",
+         ncol =4 , nrow = 7)
+```
+Take a look at the enriched transcription factors:
+1. CDX2
+2. ZBTB33
+3. MAFB
+4. ZEB1
+5. NCOA3
+6. MEF2A
+7. ARNTL
+8. BACH2
+9. NCOA1
+10. MAFF
+11. GRHL2
+12. ZNF740
+13. ZBTB11
+14. FOXO1
+15. EHF
+16. HNF1B
+17. ARID2
+18. ATF4
+19. FOXO3
+20. NCOA2
+
+```{r}
+# CDX2 targets
+targets_CDX2 <- regulons$target[regulons$tf == "CDX2"]
+targets_CDX2<-as.data.frame(targets_CDX2)
+
+# Create new df only containing deseq results of CDX2 targets # contains 351 genes
+PAS_CDX2_Targets<-Results_DESeq[Results_DESeq$ID %in% targets_CDX2$targets_CDX2,]
+
+# Add label column that only includes a label if it is up or down
+PAS_CDX2_Targets$delabel<-NA
+PAS_CDX2_Targets$delabel[PAS_CDX2_Targets$expression !="Stable"]<-PAS_CDX2_Targets$ID[PAS_CDX2_Targets$expression !="Stable"]
+
+CDX2 <- ggplot(data = PAS_CDX2_Targets, 
+            aes(x = PAS_CDX2_Targets$log2FoldChange, 
+                y = -log2(PAS_CDX2_Targets$padj), 
+                colour=PAS_CDX2_Targets$expression,
+                label = PAS_CDX2_Targets$delabel)) + 
+  geom_point(alpha=0.4, size=3.5) + geom_text()+
+  scale_color_manual(values=c("grey","red"))+
+  xlim(c(-4.5, 4.5)) +
+  geom_vline(xintercept=c(-1,1),lty=4,col="black",lwd=0.8) +
+  geom_hline(yintercept = 1.301,lty=4,col="black",lwd=0.8) +
+  labs(x="log2(fold change)",
+       y="-log10 (adj.p-value)",
+       title="CDX2 targets")  +
+  theme_bw()+
+  theme(plot.title = element_text(hjust = 0.5), 
+        legend.position="right", 
+        legend.title = element_blank())
+CDX2
+
+#-----------
+# ZBTB33 targets
+targets_ZBTB33 <- regulons$target[regulons$tf == "ZBTB33"]
+targets_ZBTB33<-as.data.frame(targets_ZBTB33)
+
+# Create new df only containing deseq results of ZBTB33 targets # contains 351 genes
+PAS_ZBTB33_Targets<-Results_DESeq[Results_DESeq$ID %in% targets_ZBTB33$targets_ZBTB33,]
+
+# Add label column that only includes a label if it is up or down
+PAS_ZBTB33_Targets$delabel<-NA
+PAS_ZBTB33_Targets$delabel[PAS_ZBTB33_Targets$expression !="Stable"]<-PAS_ZBTB33_Targets$ID[PAS_ZBTB33_Targets$expression !="Stable"]
+
+ZBTB33 <- ggplot(data = PAS_ZBTB33_Targets, 
+            aes(x = PAS_ZBTB33_Targets$log2FoldChange, 
+                y = -log2(PAS_ZBTB33_Targets$padj), 
+                colour=PAS_ZBTB33_Targets$expression,
+                label = PAS_ZBTB33_Targets$delabel)) + 
+  geom_point(alpha=0.4, size=3.5) + geom_text()+
+  scale_color_manual(values=c("grey","red"))+
+  xlim(c(-4.5, 4.5)) +
+  geom_vline(xintercept=c(-1,1),lty=4,col="black",lwd=0.8) +
+  geom_hline(yintercept = 1.301,lty=4,col="black",lwd=0.8) +
+  labs(x="log2(fold change)",
+       y="-log10 (adj.p-value)",
+       title="ZBTB33 targets")  +
+  theme_bw()+
+  theme(plot.title = element_text(hjust = 0.5), 
+        legend.position="right", 
+        legend.title = element_blank())
+ZBTB33
+
+#------------
+# MAFB targets
+targets_MAFB <- regulons$target[regulons$tf == "MAFB"]
+targets_MAFB<-as.data.frame(targets_MAFB)
+
+# Create new df only containing deseq results of MAFB targets # contains 351 genes
+PAS_MAFB_Targets<-Results_DESeq[Results_DESeq$ID %in% targets_MAFB$targets_MAFB,]
+
+# Add label column that only includes a label if it is up or down
+PAS_MAFB_Targets$delabel<-NA
+PAS_MAFB_Targets$delabel[PAS_MAFB_Targets$expression !="Stable"]<-PAS_MAFB_Targets$ID[PAS_MAFB_Targets$expression !="Stable"]
+
+MAFB <- ggplot(data = PAS_MAFB_Targets, 
+            aes(x = PAS_MAFB_Targets$log2FoldChange, 
+                y = -log2(PAS_MAFB_Targets$padj), 
+                colour=PAS_MAFB_Targets$expression,
+                label = PAS_MAFB_Targets$delabel)) + 
+  geom_point(alpha=0.4, size=3.5) + geom_text()+
+  scale_color_manual(values=c("grey","red"))+
+  xlim(c(-4.5, 4.5)) +
+  geom_vline(xintercept=c(-1,1),lty=4,col="black",lwd=0.8) +
+  geom_hline(yintercept = 1.301,lty=4,col="black",lwd=0.8) +
+  labs(x="log2(fold change)",
+       y="-log10 (adj.p-value)",
+       title="MAFB targets")  +
+  theme_bw()+
+  theme(plot.title = element_text(hjust = 0.5), 
+        legend.position="right", 
+        legend.title = element_blank())
+MAFB
+
+#---------
+# ZEB1 targets
+targets_ZEB1 <- regulons$target[regulons$tf == "ZEB1"]
+targets_ZEB1<-as.data.frame(targets_ZEB1)
+
+# Create new df only containing deseq results of ZEB1 targets # contains 351 genes
+PAS_ZEB1_Targets<-Results_DESeq[Results_DESeq$ID %in% targets_ZEB1$targets_ZEB1,]
+
+# Add label column that only includes a label if it is up or down
+PAS_ZEB1_Targets$delabel<-NA
+PAS_ZEB1_Targets$delabel[PAS_ZEB1_Targets$expression !="Stable"]<-PAS_ZEB1_Targets$ID[PAS_ZEB1_Targets$expression !="Stable"]
+
+ZEB1 <- ggplot(data = PAS_ZEB1_Targets, 
+            aes(x = PAS_ZEB1_Targets$log2FoldChange, 
+                y = -log2(PAS_ZEB1_Targets$padj), 
+                colour=PAS_ZEB1_Targets$expression,
+                label = PAS_ZEB1_Targets$delabel)) + 
+  geom_point(alpha=0.4, size=3.5) + geom_text()+
+  scale_color_manual(values=c("grey","red"))+
+  xlim(c(-4.5, 4.5)) +
+  geom_vline(xintercept=c(-1,1),lty=4,col="black",lwd=0.8) +
+  geom_hline(yintercept = 1.301,lty=4,col="black",lwd=0.8) +
+  labs(x="log2(fold change)",
+       y="-log10 (adj.p-value)",
+       title="ZEB1 targets")  +
+  theme_bw()+
+  theme(plot.title = element_text(hjust = 0.5), 
+        legend.position="right", 
+        legend.title = element_blank())
+ZEB1
+
+#-----------
+# NCOA3 targets
+targets_NCOA3 <- regulons$target[regulons$tf == "NCOA3"]
+targets_NCOA3<-as.data.frame(targets_NCOA3)
+
+# Create new df only containing deseq results of NCOA3 targets # contains 351 genes
+PAS_NCOA3_Targets<-Results_DESeq[Results_DESeq$ID %in% targets_NCOA3$targets_NCOA3,]
+
+# Add label column that only includes a label if it is up or down
+PAS_NCOA3_Targets$delabel<-NA
+PAS_NCOA3_Targets$delabel[PAS_NCOA3_Targets$expression !="Stable"]<-PAS_NCOA3_Targets$ID[PAS_NCOA3_Targets$expression !="Stable"]
+
+NCOA3 <- ggplot(data = PAS_NCOA3_Targets, 
+            aes(x = PAS_NCOA3_Targets$log2FoldChange, 
+                y = -log2(PAS_NCOA3_Targets$padj), 
+                colour=PAS_NCOA3_Targets$expression,
+                label = PAS_NCOA3_Targets$delabel)) + 
+  geom_point(alpha=0.4, size=3.5) + geom_text()+
+  scale_color_manual(values=c("grey","red"))+
+  xlim(c(-4.5, 4.5)) +
+  geom_vline(xintercept=c(-1,1),lty=4,col="black",lwd=0.8) +
+  geom_hline(yintercept = 1.301,lty=4,col="black",lwd=0.8) +
+  labs(x="log2(fold change)",
+       y="-log10 (adj.p-value)",
+       title="NCOA3 targets")  +
+  theme_bw()+
+  theme(plot.title = element_text(hjust = 0.5), 
+        legend.position="right", 
+        legend.title = element_blank())
+NCOA3
+
+#-------------
+# MEF2A targets
+targets_MEF2A <- regulons$target[regulons$tf == "MEF2A"]
+targets_MEF2A<-as.data.frame(targets_MEF2A)
+
+# Create new df only containing deseq results of MEF2A targets # contains 351 genes
+PAS_MEF2A_Targets<-Results_DESeq[Results_DESeq$ID %in% targets_MEF2A$targets_MEF2A,]
+
+# Add label column that only includes a label if it is up or down
+PAS_MEF2A_Targets$delabel<-NA
+PAS_MEF2A_Targets$delabel[PAS_MEF2A_Targets$expression !="Stable"]<-PAS_MEF2A_Targets$ID[PAS_MEF2A_Targets$expression !="Stable"]
+
+MEF2A <- ggplot(data = PAS_MEF2A_Targets, 
+            aes(x = PAS_MEF2A_Targets$log2FoldChange, 
+                y = -log2(PAS_MEF2A_Targets$padj), 
+                colour=PAS_MEF2A_Targets$expression,
+                label = PAS_MEF2A_Targets$delabel)) + 
+  geom_point(alpha=0.4, size=3.5) + geom_text()+
+  scale_color_manual(values=c("grey","red"))+
+  xlim(c(-4.5, 4.5)) +
+  geom_vline(xintercept=c(-1,1),lty=4,col="black",lwd=0.8) +
+  geom_hline(yintercept = 1.301,lty=4,col="black",lwd=0.8) +
+  labs(x="log2(fold change)",
+       y="-log10 (adj.p-value)",
+       title="MEF2A targets")  +
+  theme_bw()+
+  theme(plot.title = element_text(hjust = 0.5), 
+        legend.position="right", 
+        legend.title = element_blank())
+MEF2A
+
+#------------
+# ARNTL targets
+targets_ARNTL <- regulons$target[regulons$tf == "ARNTL"]
+targets_ARNTL<-as.data.frame(targets_ARNTL)
+
+# Create new df only containing deseq results of ARNTL targets # contains 351 genes
+PAS_ARNTL_Targets<-Results_DESeq[Results_DESeq$ID %in% targets_ARNTL$targets_ARNTL,]
+
+# Add label column that only includes a label if it is up or down
+PAS_ARNTL_Targets$delabel<-NA
+PAS_ARNTL_Targets$delabel[PAS_ARNTL_Targets$expression !="Stable"]<-PAS_ARNTL_Targets$ID[PAS_ARNTL_Targets$expression !="Stable"]
+
+ARNTL <- ggplot(data = PAS_ARNTL_Targets, 
+            aes(x = PAS_ARNTL_Targets$log2FoldChange, 
+                y = -log2(PAS_ARNTL_Targets$padj), 
+                colour=PAS_ARNTL_Targets$expression,
+                label = PAS_ARNTL_Targets$delabel)) + 
+  geom_point(alpha=0.4, size=3.5) + geom_text()+
+  scale_color_manual(values=c("grey","red"))+
+  xlim(c(-4.5, 4.5)) +
+  geom_vline(xintercept=c(-1,1),lty=4,col="black",lwd=0.8) +
+  geom_hline(yintercept = 1.301,lty=4,col="black",lwd=0.8) +
+  labs(x="log2(fold change)",
+       y="-log10 (adj.p-value)",
+       title="ARNTL targets")  +
+  theme_bw()+
+  theme(plot.title = element_text(hjust = 0.5), 
+        legend.position="right", 
+        legend.title = element_blank())
+ARNTL
+
+#-------------
+# BACH2 targets
+targets_BACH2 <- regulons$target[regulons$tf == "BACH2"]
+targets_BACH2<-as.data.frame(targets_BACH2)
+
+# Create new df only containing deseq results of BACH2 targets # contains 351 genes
+PAS_BACH2_Targets<-Results_DESeq[Results_DESeq$ID %in% targets_BACH2$targets_BACH2,]
+
+# Add label column that only includes a label if it is up or down
+PAS_BACH2_Targets$delabel<-NA
+PAS_BACH2_Targets$delabel[PAS_BACH2_Targets$expression !="Stable"]<-PAS_BACH2_Targets$ID[PAS_BACH2_Targets$expression !="Stable"]
+
+BACH2 <- ggplot(data = PAS_BACH2_Targets, 
+            aes(x = PAS_BACH2_Targets$log2FoldChange, 
+                y = -log2(PAS_BACH2_Targets$padj), 
+                colour=PAS_BACH2_Targets$expression,
+                label = PAS_BACH2_Targets$delabel)) + 
+  geom_point(alpha=0.4, size=3.5) + geom_text()+
+  scale_color_manual(values=c("grey","red"))+
+  xlim(c(-4.5, 4.5)) +
+  geom_vline(xintercept=c(-1,1),lty=4,col="black",lwd=0.8) +
+  geom_hline(yintercept = 1.301,lty=4,col="black",lwd=0.8) +
+  labs(x="log2(fold change)",
+       y="-log10 (adj.p-value)",
+       title="BACH2 targets")  +
+  theme_bw()+
+  theme(plot.title = element_text(hjust = 0.5), 
+        legend.position="right", 
+        legend.title = element_blank())
+BACH2
+
+#------------
+# NCOA1 targets
+targets_NCOA1 <- regulons$target[regulons$tf == "NCOA1"]
+targets_NCOA1<-as.data.frame(targets_NCOA1)
+
+# Create new df only containing deseq results of NCOA1 targets # contains 351 genes
+PAS_NCOA1_Targets<-Results_DESeq[Results_DESeq$ID %in% targets_NCOA1$targets_NCOA1,]
+
+# Add label column that only includes a label if it is up or down
+PAS_NCOA1_Targets$delabel<-NA
+PAS_NCOA1_Targets$delabel[PAS_NCOA1_Targets$expression !="Stable"]<-PAS_NCOA1_Targets$ID[PAS_NCOA1_Targets$expression !="Stable"]
+
+NCOA1 <- ggplot(data = PAS_NCOA1_Targets, 
+            aes(x = PAS_NCOA1_Targets$log2FoldChange, 
+                y = -log2(PAS_NCOA1_Targets$padj), 
+                colour=PAS_NCOA1_Targets$expression,
+                label = PAS_NCOA1_Targets$delabel)) + 
+  geom_point(alpha=0.4, size=3.5) + geom_text()+
+  scale_color_manual(values=c("grey","red"))+
+  xlim(c(-4.5, 4.5)) +
+  geom_vline(xintercept=c(-1,1),lty=4,col="black",lwd=0.8) +
+  geom_hline(yintercept = 1.301,lty=4,col="black",lwd=0.8) +
+  labs(x="log2(fold change)",
+       y="-log10 (adj.p-value)",
+       title="NCOA1 targets")  +
+  theme_bw()+
+  theme(plot.title = element_text(hjust = 0.5), 
+        legend.position="right", 
+        legend.title = element_blank())
+NCOA1
+
+#-----------
+# MAFF targets
+targets_MAFF <- regulons$target[regulons$tf == "MAFF"]
+targets_MAFF<-as.data.frame(targets_MAFF)
+
+# Create new df only containing deseq results of MAFF targets # contains 351 genes
+PAS_MAFF_Targets<-Results_DESeq[Results_DESeq$ID %in% targets_MAFF$targets_MAFF,]
+
+# Add label column that only includes a label if it is up or down
+PAS_MAFF_Targets$delabel<-NA
+PAS_MAFF_Targets$delabel[PAS_MAFF_Targets$expression !="Stable"]<-PAS_MAFF_Targets$ID[PAS_MAFF_Targets$expression !="Stable"]
+
+MAFF <- ggplot(data = PAS_MAFF_Targets, 
+            aes(x = PAS_MAFF_Targets$log2FoldChange, 
+                y = -log2(PAS_MAFF_Targets$padj), 
+                colour=PAS_MAFF_Targets$expression,
+                label = PAS_MAFF_Targets$delabel)) + 
+  geom_point(alpha=0.4, size=3.5) + geom_text()+
+  scale_color_manual(values=c("grey","red"))+
+  xlim(c(-4.5, 4.5)) +
+  geom_vline(xintercept=c(-1,1),lty=4,col="black",lwd=0.8) +
+  geom_hline(yintercept = 1.301,lty=4,col="black",lwd=0.8) +
+  labs(x="log2(fold change)",
+       y="-log10 (adj.p-value)",
+       title="MAFF targets")  +
+  theme_bw()+
+  theme(plot.title = element_text(hjust = 0.5), 
+        legend.position="right", 
+        legend.title = element_blank())
+MAFF
+
+#----------
+# GRHL2 targets
+targets_GRHL2 <- regulons$target[regulons$tf == "GRHL2"]
+targets_GRHL2<-as.data.frame(targets_GRHL2)
+
+# Create new df only containing deseq results of GRHL2 targets # contains 351 genes
+PAS_GRHL2_Targets<-Results_DESeq[Results_DESeq$ID %in% targets_GRHL2$targets_GRHL2,]
+
+# Add label column that only includes a label if it is up or down
+PAS_GRHL2_Targets$delabel<-NA
+PAS_GRHL2_Targets$delabel[PAS_GRHL2_Targets$expression !="Stable"]<-PAS_GRHL2_Targets$ID[PAS_GRHL2_Targets$expression !="Stable"]
+
+GRHL2 <- ggplot(data = PAS_GRHL2_Targets, 
+            aes(x = PAS_GRHL2_Targets$log2FoldChange, 
+                y = -log2(PAS_GRHL2_Targets$padj), 
+                colour=PAS_GRHL2_Targets$expression,
+                label = PAS_GRHL2_Targets$delabel)) + 
+  geom_point(alpha=0.4, size=3.5) + geom_text()+
+  scale_color_manual(values=c("grey","red"))+
+  xlim(c(-4.5, 4.5)) +
+  geom_vline(xintercept=c(-1,1),lty=4,col="black",lwd=0.8) +
+  geom_hline(yintercept = 1.301,lty=4,col="black",lwd=0.8) +
+  labs(x="log2(fold change)",
+       y="-log10 (adj.p-value)",
+       title="GRHL2 targets")  +
+  theme_bw()+
+  theme(plot.title = element_text(hjust = 0.5), 
+        legend.position="right", 
+        legend.title = element_blank())
+GRHL2
+
+#------------
+# ZNF740 targets
+targets_ZNF740 <- regulons$target[regulons$tf == "ZNF740"]
+targets_ZNF740<-as.data.frame(targets_ZNF740)
+
+# Create new df only containing deseq results of ZNF740 targets # contains 351 genes
+PAS_ZNF740_Targets<-Results_DESeq[Results_DESeq$ID %in% targets_ZNF740$targets_ZNF740,]
+
+# Add label column that only includes a label if it is up or down
+PAS_ZNF740_Targets$delabel<-NA
+PAS_ZNF740_Targets$delabel[PAS_ZNF740_Targets$expression !="Stable"]<-PAS_ZNF740_Targets$ID[PAS_ZNF740_Targets$expression !="Stable"]
+
+ZNF740 <- ggplot(data = PAS_ZNF740_Targets, 
+            aes(x = PAS_ZNF740_Targets$log2FoldChange, 
+                y = -log2(PAS_ZNF740_Targets$padj), 
+                colour=PAS_ZNF740_Targets$expression,
+                label = PAS_ZNF740_Targets$delabel)) + 
+  geom_point(alpha=0.4, size=3.5) + geom_text()+
+  scale_color_manual(values=c("grey","red"))+
+  xlim(c(-4.5, 4.5)) +
+  geom_vline(xintercept=c(-1,1),lty=4,col="black",lwd=0.8) +
+  geom_hline(yintercept = 1.301,lty=4,col="black",lwd=0.8) +
+  labs(x="log2(fold change)",
+       y="-log10 (adj.p-value)",
+       title="ZNF740 targets")  +
+  theme_bw()+
+  theme(plot.title = element_text(hjust = 0.5), 
+        legend.position="right", 
+        legend.title = element_blank())
+ZNF740
+
+#--------------
+# ZBTB11 targets
+targets_ZBTB11 <- regulons$target[regulons$tf == "ZBTB11"]
+targets_ZBTB11<-as.data.frame(targets_ZBTB11)
+
+# Create new df only containing deseq results of ZBTB11 targets # contains 351 genes
+PAS_ZBTB11_Targets<-Results_DESeq[Results_DESeq$ID %in% targets_ZBTB11$targets_ZBTB11,]
+
+# Add label column that only includes a label if it is up or down
+PAS_ZBTB11_Targets$delabel<-NA
+PAS_ZBTB11_Targets$delabel[PAS_ZBTB11_Targets$expression !="Stable"]<-PAS_ZBTB11_Targets$ID[PAS_ZBTB11_Targets$expression !="Stable"]
+
+ZBTB11 <- ggplot(data = PAS_ZBTB11_Targets, 
+            aes(x = PAS_ZBTB11_Targets$log2FoldChange, 
+                y = -log2(PAS_ZBTB11_Targets$padj), 
+                colour=PAS_ZBTB11_Targets$expression,
+                label = PAS_ZBTB11_Targets$delabel)) + 
+  geom_point(alpha=0.4, size=3.5) + geom_text()+
+  scale_color_manual(values=c("grey","red"))+
+  xlim(c(-4.5, 4.5)) +
+  geom_vline(xintercept=c(-1,1),lty=4,col="black",lwd=0.8) +
+  geom_hline(yintercept = 1.301,lty=4,col="black",lwd=0.8) +
+  labs(x="log2(fold change)",
+       y="-log10 (adj.p-value)",
+       title="ZBTB11 targets")  +
+  theme_bw()+
+  theme(plot.title = element_text(hjust = 0.5), 
+        legend.position="right", 
+        legend.title = element_blank())
+ZBTB11
+
+#------------
+# FOXO1 targets
+targets_FOXO1 <- regulons$target[regulons$tf == "FOXO1"]
+targets_FOXO1<-as.data.frame(targets_FOXO1)
+
+# Create new df only containing deseq results of FOXO1 targets # contains 351 genes
+PAS_FOXO1_Targets<-Results_DESeq[Results_DESeq$ID %in% targets_FOXO1$targets_FOXO1,]
+
+# Add label column that only includes a label if it is up or down
+PAS_FOXO1_Targets$delabel<-NA
+PAS_FOXO1_Targets$delabel[PAS_FOXO1_Targets$expression !="Stable"]<-PAS_FOXO1_Targets$ID[PAS_FOXO1_Targets$expression !="Stable"]
+
+FOXO1 <- ggplot(data = PAS_FOXO1_Targets, 
+            aes(x = PAS_FOXO1_Targets$log2FoldChange, 
+                y = -log2(PAS_FOXO1_Targets$padj), 
+                colour=PAS_FOXO1_Targets$expression,
+                label = PAS_FOXO1_Targets$delabel)) + 
+  geom_point(alpha=0.4, size=3.5) + geom_text()+
+  scale_color_manual(values=c("grey","red"))+
+  xlim(c(-4.5, 4.5)) +
+  geom_vline(xintercept=c(-1,1),lty=4,col="black",lwd=0.8) +
+  geom_hline(yintercept = 1.301,lty=4,col="black",lwd=0.8) +
+  labs(x="log2(fold change)",
+       y="-log10 (adj.p-value)",
+       title="FOXO1 targets")  +
+  theme_bw()+
+  theme(plot.title = element_text(hjust = 0.5), 
+        legend.position="right", 
+        legend.title = element_blank())
+FOXO1
+
+#------------
+# EHF targets
+targets_EHF <- regulons$target[regulons$tf == "EHF"]
+targets_EHF<-as.data.frame(targets_EHF)
+
+# Create new df only containing deseq results of EHF targets # contains 351 genes
+PAS_EHF_Targets<-Results_DESeq[Results_DESeq$ID %in% targets_EHF$targets_EHF,]
+
+# Add label column that only includes a label if it is up or down
+PAS_EHF_Targets$delabel<-NA
+PAS_EHF_Targets$delabel[PAS_EHF_Targets$expression !="Stable"]<-PAS_EHF_Targets$ID[PAS_EHF_Targets$expression !="Stable"]
+
+EHF <- ggplot(data = PAS_EHF_Targets, 
+            aes(x = PAS_EHF_Targets$log2FoldChange, 
+                y = -log2(PAS_EHF_Targets$padj), 
+                colour=PAS_EHF_Targets$expression,
+                label = PAS_EHF_Targets$delabel)) + 
+  geom_point(alpha=0.4, size=3.5) + geom_text()+
+  scale_color_manual(values=c("grey","red"))+
+  xlim(c(-4.5, 4.5)) +
+  geom_vline(xintercept=c(-1,1),lty=4,col="black",lwd=0.8) +
+  geom_hline(yintercept = 1.301,lty=4,col="black",lwd=0.8) +
+  labs(x="log2(fold change)",
+       y="-log10 (adj.p-value)",
+       title="EHF targets")  +
+  theme_bw()+
+  theme(plot.title = element_text(hjust = 0.5), 
+        legend.position="right", 
+        legend.title = element_blank())
+EHF
+
+#-------------
+# HNF1B targets
+targets_HNF1B <- regulons$target[regulons$tf == "HNF1B"]
+targets_HNF1B<-as.data.frame(targets_HNF1B)
+
+# Create new df only containing deseq results of HNF1B targets # contains 351 genes
+PAS_HNF1B_Targets<-Results_DESeq[Results_DESeq$ID %in% targets_HNF1B$targets_HNF1B,]
+
+# Add label column that only includes a label if it is up or down
+PAS_HNF1B_Targets$delabel<-NA
+PAS_HNF1B_Targets$delabel[PAS_HNF1B_Targets$expression !="Stable"]<-PAS_HNF1B_Targets$ID[PAS_HNF1B_Targets$expression !="Stable"]
+
+HNF1B <- ggplot(data = PAS_HNF1B_Targets, 
+            aes(x = PAS_HNF1B_Targets$log2FoldChange, 
+                y = -log2(PAS_HNF1B_Targets$padj), 
+                colour=PAS_HNF1B_Targets$expression,
+                label = PAS_HNF1B_Targets$delabel)) + 
+  geom_point(alpha=0.4, size=3.5) + geom_text()+
+  scale_color_manual(values=c("grey","red"))+
+  xlim(c(-4.5, 4.5)) +
+  geom_vline(xintercept=c(-1,1),lty=4,col="black",lwd=0.8) +
+  geom_hline(yintercept = 1.301,lty=4,col="black",lwd=0.8) +
+  labs(x="log2(fold change)",
+       y="-log10 (adj.p-value)",
+       title="HNF1B targets")  +
+  theme_bw()+
+  theme(plot.title = element_text(hjust = 0.5), 
+        legend.position="right", 
+        legend.title = element_blank())
+HNF1B
+
+#-----------
+# ARID2 targets
+targets_ARID2 <- regulons$target[regulons$tf == "ARID2"]
+targets_ARID2<-as.data.frame(targets_ARID2)
+
+# Create new df only containing deseq results of ARID2 targets # contains 351 genes
+PAS_ARID2_Targets<-Results_DESeq[Results_DESeq$ID %in% targets_ARID2$targets_ARID2,]
+
+# Add label column that only includes a label if it is up or down
+PAS_ARID2_Targets$delabel<-NA
+PAS_ARID2_Targets$delabel[PAS_ARID2_Targets$expression !="Stable"]<-PAS_ARID2_Targets$ID[PAS_ARID2_Targets$expression !="Stable"]
+
+ARID2 <- ggplot(data = PAS_ARID2_Targets, 
+            aes(x = PAS_ARID2_Targets$log2FoldChange, 
+                y = -log2(PAS_ARID2_Targets$padj), 
+                colour=PAS_ARID2_Targets$expression,
+                label = PAS_ARID2_Targets$delabel)) + 
+  geom_point(alpha=0.4, size=3.5) + geom_text()+
+  scale_color_manual(values=c("grey","red"))+
+  xlim(c(-4.5, 4.5)) +
+  geom_vline(xintercept=c(-1,1),lty=4,col="black",lwd=0.8) +
+  geom_hline(yintercept = 1.301,lty=4,col="black",lwd=0.8) +
+  labs(x="log2(fold change)",
+       y="-log10 (adj.p-value)",
+       title="ARID2 targets")  +
+  theme_bw()+
+  theme(plot.title = element_text(hjust = 0.5), 
+        legend.position="right", 
+        legend.title = element_blank())
+ARID2
+
+#------------
+# ATF4 targets
+targets_ATF4 <- regulons$target[regulons$tf == "ATF4"]
+targets_ATF4<-as.data.frame(targets_ATF4)
+
+# Create new df only containing deseq results of ATF4 targets # contains 351 genes
+PAS_ATF4_Targets<-Results_DESeq[Results_DESeq$ID %in% targets_ATF4$targets_ATF4,]
+
+# Add label column that only includes a label if it is up or down
+PAS_ATF4_Targets$delabel<-NA
+PAS_ATF4_Targets$delabel[PAS_ATF4_Targets$expression !="Stable"]<-PAS_ATF4_Targets$ID[PAS_ATF4_Targets$expression !="Stable"]
+
+ATF4 <- ggplot(data = PAS_ATF4_Targets, 
+            aes(x = PAS_ATF4_Targets$log2FoldChange, 
+                y = -log2(PAS_ATF4_Targets$padj), 
+                colour=PAS_ATF4_Targets$expression,
+                label = PAS_ATF4_Targets$delabel)) + 
+  geom_point(alpha=0.4, size=3.5) + geom_text()+
+  scale_color_manual(values=c("grey","red"))+
+  xlim(c(-4.5, 4.5)) +
+  geom_vline(xintercept=c(-1,1),lty=4,col="black",lwd=0.8) +
+  geom_hline(yintercept = 1.301,lty=4,col="black",lwd=0.8) +
+  labs(x="log2(fold change)",
+       y="-log10 (adj.p-value)",
+       title="ATF4 targets")  +
+  theme_bw()+
+  theme(plot.title = element_text(hjust = 0.5), 
+        legend.position="right", 
+        legend.title = element_blank())
+ATF4
+
+#---------------
+# FOXO3 targets
+targets_FOXO3 <- regulons$target[regulons$tf == "FOXO3"]
+targets_FOXO3<-as.data.frame(targets_FOXO3)
+
+# Create new df only containing deseq results of FOXO3 targets # contains 351 genes
+PAS_FOXO3_Targets<-Results_DESeq[Results_DESeq$ID %in% targets_FOXO3$targets_FOXO3,]
+
+# Add label column that only includes a label if it is up or down
+PAS_FOXO3_Targets$delabel<-NA
+PAS_FOXO3_Targets$delabel[PAS_FOXO3_Targets$expression !="Stable"]<-PAS_FOXO3_Targets$ID[PAS_FOXO3_Targets$expression !="Stable"]
+
+FOXO3 <- ggplot(data = PAS_FOXO3_Targets, 
+            aes(x = PAS_FOXO3_Targets$log2FoldChange, 
+                y = -log2(PAS_FOXO3_Targets$padj), 
+                colour=PAS_FOXO3_Targets$expression,
+                label = PAS_FOXO3_Targets$delabel)) + 
+  geom_point(alpha=0.4, size=3.5) + geom_text()+
+  scale_color_manual(values=c("grey","red"))+
+  xlim(c(-4.5, 4.5)) +
+  geom_vline(xintercept=c(-1,1),lty=4,col="black",lwd=0.8) +
+  geom_hline(yintercept = 1.301,lty=4,col="black",lwd=0.8) +
+  labs(x="log2(fold change)",
+       y="-log10 (adj.p-value)",
+       title="FOXO3 targets")  +
+  theme_bw()+
+  theme(plot.title = element_text(hjust = 0.5), 
+        legend.position="right", 
+        legend.title = element_blank())
+FOXO3
+
+#-----------------
+# NCOA2 targets
+targets_NCOA2 <- regulons$target[regulons$tf == "NCOA2"]
+targets_NCOA2<-as.data.frame(targets_NCOA2)
+
+# Create new df only containing deseq results of NCOA2 targets # contains 351 genes
+PAS_NCOA2_Targets<-Results_DESeq[Results_DESeq$ID %in% targets_NCOA2$targets_NCOA2,]
+
+# Add label column that only includes a label if it is up or down
+PAS_NCOA2_Targets$delabel<-NA
+PAS_NCOA2_Targets$delabel[PAS_NCOA2_Targets$expression !="Stable"]<-PAS_NCOA2_Targets$ID[PAS_NCOA2_Targets$expression !="Stable"]
+
+NCOA2 <- ggplot(data = PAS_NCOA2_Targets, 
+            aes(x = PAS_NCOA2_Targets$log2FoldChange, 
+                y = -log2(PAS_NCOA2_Targets$padj), 
+                colour=PAS_NCOA2_Targets$expression,
+                label = PAS_NCOA2_Targets$delabel)) + 
+  geom_point(alpha=0.4, size=3.5) + geom_text()+
+  scale_color_manual(values=c("grey","red"))+
+  xlim(c(-4.5, 4.5)) +
+  geom_vline(xintercept=c(-1,1),lty=4,col="black",lwd=0.8) +
+  geom_hline(yintercept = 1.301,lty=4,col="black",lwd=0.8) +
+  labs(x="log2(fold change)",
+       y="-log10 (adj.p-value)",
+       title="NCOA2 targets")  +
+  theme_bw()+
+  theme(plot.title = element_text(hjust = 0.5), 
+        legend.position="right", 
+        legend.title = element_blank())
+NCOA2
+
+```
+
+```{r, fig.width=20, fig.height=30, warning= FALSE}
+# COMBINED figure
+ggarrange(CDX2,ZBTB33,MAFB,ZEB1,NCOA3,MEF2A,ARNTL,BACH2,NCOA1,MAFF,GRHL2,ZNF740,ZBTB11,FOXO1,EHF,HNF1B,ARID2,ATF4,FOXO3,NCOA2 +  rremove("x.text"),
+         ncol =4 , nrow = 5)
+```
+## Normalized enrichment score deviations
+An interesting observation of these plots is the fact that most do not show specific underenrichment or overenrichment of the downstream targets. This can be partially dedicated to the fact that the test-statistic (t) is converted to the NES, which is different to how it is usually performed. It has also become quite clear that non of these transcription factors show significant ES. 
+
+A gene set enrichment analysis is based upon an a priori defined set of genes "S" (e.g., genes encoding for a specific pathway, genes associated with a GO-term, or the genes in the operon dataset). In order to determine which genes of S are randomly distributed throughout a list called "L" a variety of steps are performed:
+
+1. Calculation of the enrichment score (ES)
+The enrichment score (ES) reflects the degree to which a certain gene set is overrepresented at the extremes. Those extremes indicate the genes present at the top or bottom of L. The score itself is calculated by going through list L, while increasing the running sum statistic every time a gene in S is encountered. In contrast the score is reduced for a specific gene if the gene is not present in S. The correlation of the gene with the phenotype, or in our case state of differentiation, determines the magnitude of those increments. The enrichment score can be described as the maximum deviation from zero encountered in L, which is very similar to a weighted Kolmogorov-Smirnov-like statistic.
+
+2. Estimation of significance levels of ES
+The statistical significance (nominal p-value) is estimated from the ES by employing a phenotype-based permutation test. In our case this would probably be an operon based permutation. This test is supposed to guarantee the complexity of the correlation within the structure of the expression data. In the original frame of a GSEA the phenotype labels are permuted while the ES are recomputed for the permuted data, which generates a null distribution for the ES. The nominal p-value from the observed ES, is then calculated relative to the null distribution. 
+
+3. Adjustment for multiple hypothesis testing
+Due to the fact that in a GSEA a large gene set is evaluated, adjustments for multiple testing needs to be applied. This is usually done by normalizing the ES for each gene set to account for the size, which then yields the normalized enrichment score (NES). Thereafter, a control for the proportion of false positives is made by calculating the false discovery rate (FDR). The FDR represents the estimated probability that a gene set with a given NES indicates a false positive finding. To be consise the FDR is computd by comparing the tails of the observed distribution and null distribution for the NES.
+
+## Transcription factor activity over time
+```{r}
+tf_activities_counts <- 
+    dorothea::run_viper(gene_expr, regulons,
+    options =  list(minsize = 20, eset.filter = FALSE, 
+    cores = 1, verbose = FALSE, method = c("scale")))
+
+# For top 25
+
+tf_activities_counts_filter_25 <- tf_activities_counts %>% 
+    as.data.frame() %>% 
+    rownames_to_column(var = "GeneID") %>%
+    dplyr::filter(GeneID %in% tf_activities_stat_top25$GeneID) %>%
+    column_to_rownames(var = "GeneID") %>%
+    as.matrix()
+
+tf_activities_vector_25 <- as.vector(tf_activities_counts_filter_25)
+
+paletteLength <- 100
+myColor <- 
+    colorRampPalette(c("darkblue", "whitesmoke","indianred"))(paletteLength)
+
+dorotheaBreaks25 <- c(seq(min(tf_activities_vector_25), 0, 
+    length.out=ceiling(paletteLength/2) + 1),
+    seq(max(tf_activities_vector_25)/paletteLength, 
+    max(tf_activities_vector_25), 
+    length.out=floor(paletteLength/2)))
+dorothea_hmap <- pheatmap(tf_activities_counts_filter_25, cluster_cols = FALSE,
+    fontsize=14, fontsize_row = 8, fontsize_col = 8, 
+    color=myColor, breaks = dorotheaBreaks25,
+    main = "Dorothea ABC top 25", angle_col = 45,
+    treeheight_col = 0,  border_color = NA)
+
+# For top 50
+tf_activities_counts_filter_50 <- tf_activities_counts %>% 
+    as.data.frame() %>% 
+    rownames_to_column(var = "GeneID") %>%
+    dplyr::filter(GeneID %in% tf_activities_stat_top50$GeneID) %>%
+    column_to_rownames(var = "GeneID") %>%
+    as.matrix()
+
+tf_activities_vector_50 <- as.vector(tf_activities_counts_filter_50)
+
+dorotheaBreaks50 <- c(seq(min(tf_activities_vector_50), 0, 
+    length.out=ceiling(paletteLength/2) + 1),
+    seq(max(tf_activities_vector_50)/paletteLength, 
+    max(tf_activities_vector_50), 
+    length.out=floor(paletteLength/2)))
+dorothea_hmap <- pheatmap(tf_activities_counts_filter_50,cluster_cols = FALSE,
+    fontsize=14, fontsize_row = 8, fontsize_col = 8, 
+    color=myColor, breaks = dorotheaBreaks50,
+    main = "Dorothea ABC top 50", angle_col = 45,
+    treeheight_col = 0,  border_color = NA)
+```
+These results visually indicate upregulation during the first timeperiod of differentiation while they downregulate at later points of differentiation. There could be hypothesized these TFs could be seen as a preliminary proliferative marker, as proliferation markers upregulate during the first period of differentiation while they downregulate at a later timepoint.In addition, these transcription factors could for example be upstream targets of those proliferation markers. 
+
+
+### GO-term for top 25 transcription factors
+
+In order to gain an understanding about the function of the TF's and their regulons I will perform a simple GO-term.
+To perform the GO analysis I need the group(GO) function to classify our differentially expressed genes.
+```{r}
+# create genes string
+Top25_genes_regulons<-diffexpranalysisresults[rownames(diffexpranalysisresults) %in% c(
+"MYC","ACADM", "ACE", "ACO2", "ACOX1", "ACP3", "ACP5", "ACTG1", "ACYP2", 
+"ADCY9", "AHSG", "AIMP2", "AKAP1", "AKR1A1", "ALDH9A1", "ALG5", 
+"AMD1", "AMPD2", "AMPD3", "APC", "APEX1", "APP", "AQR", "ARF1", 
+"ARF4", "ARFGAP2", "ARSB", "ASCL2", "ASS1", "ATAD3B", "ATF4", 
+"ATF7", "ATP1A2", "ATP6V1G2", "AVP", "BAX", "BBC3", "BCL2", "BCL2L12", 
+"BCL3", "BLK", "BMP4", "BRCA1", "BRCA2", "BRD7", "BSG", "C9orf43", 
+"CAD", "CASP8", "CASP8AP2", "CASP9", "CBS", "CBX3", "CBX5", "CCKBR", 
+"CCNA2", "CCNB1", "CCND1", "CCND2", "CCNE1", "CCT5", "CD63", 
+"CD79B", "CDC25A", "CDC25C", "CDK4", "CDK6", "CDKN1A", "CDKN2B", 
+"CEACAM5", "CEBPA", "CFLAR", "CHRNB1", "CKS2", "CLCN6", "CLINT1", 
+"CLP1", "CLUH", "CLUL1", "CMAS", "COL4A1", "COX7A2L", "CRAT", 
+"CRIPT", "CSDE1", "CST5", "CSTB", "CTSF", "CXCL2", "CXCR4", "CXXC1", 
+"DCK", "DDX11", "DDX18", "DDX5", "DFFA", "DKC1", "DLEU1", "DLEU2", 
+"DMAC2L", "DNPH1", "DPY30", "DUSP1", "E2F1", "EGR3", "EIF3C", 
+"EIF4A1", "EIF4B", "EIF4E", "EIF4EBP2", "EIF5A2", "ELK1", "ENO1", 
+"ENTPD7", "EPB42", "EPHX1", "ESD", "ETS2", "EXOSC8", "FAH", "FASLG", 
+"FASN", "FECH", "FGF9", "FGFR4", "FOSL1", "FOXM1", "FPGS", "FUT1", 
+"FXN", "FXR1", "GADD45A", "GALT", "GAPDH", "GAS8", "GLA", "GNL3", 
+"GOLPH3", "GPR4", "GSK3B", "GSTP1", "GTF2H2", "H2AZ1", "H4C14", 
+"HBA2", "HBP1", "HDAC2", "HDAC3", "HERC5", "HERPUD1", "HES1", 
+"HIF1A", "HINT1", "HLA-F", "HMBS", "HMGN2", "HMOX1", "HNRNPA1", 
+"HNRNPA2B1", "HNRNPDL", "HOXD13", "HOXD3", "HSD11B2", "HSP90AA2P", 
+"HSPA4", "HSPA8", "HSPA9", "HSPD1", "HSPE1", "ICAM1", "ID2", 
+"ID3", "IER3", "IL11RA", "IL13", "IL2", "IMPA2", "INSM1", "INSR", 
+"IRF2", "IRF3", "ISG20", "ITGA6", "ITGB1", "JUN", "JUNB", "KIAA1586", 
+"KLF1", "KLK10", "LAIR1", "LAIR2", "LAMB2", "LAMP1", "LBR", "LDHA", 
+"LDHB", "LMNA", "LMX1B", "LTA4H", "LTB", "MAGEA3", "MAN2A2", 
+"MBD1", "MCM7", "MDM2", "MEIS1", "MEIS2", "MELTF", "MEN1", "MET", 
+"METTL1", "MFAP1", "MGST1", "MNT", "MNX1", "MPO", "MSH2", "MSN", 
+"MST1", "MTERF1", "MTHFD1", "MTHFR", "MUC1", "MYBL2", "MYCL", 
+"NAP1L1", "NAT10", "NCL", "NDRG1", "NEFM", "NFIL3", "NFKBIL1", 
+"NID1", "NIT1", "NME1", "NME2", "NOD1", "NOL7", "NOP56", "NOTCH4", 
+"NPM1", "NR1D1", "NRAS", "NTHL1", "NTN3", "NUP155", "NXT1", "OCA2", 
+"ODC1", "PAICS", "PARP1", "PCBD2", "PCNA", "PDHA1", "PER1", "PEX14", 
+"PEX3", "PFDN6", "PHB", "PIGF", "PIK3C3", "PKM", "PKP1", "PLA2G4A", 
+"PMAIP1", "POLB", "POLD2", "POLE3", "PPAT", "PPID", "PPIF", "PPP1R7", 
+"PQBP1", "PRDM8", "PRDX3", "PRKDC", "PRTN3", "PSEN2", "PSMB1", "PSMG1", "PTEN", "PTGER2", "PTMA", "PTPA", "QDPR", "RAD51", "RARA", 
+"RARB", "RBBP4", "RBM39", "RBM8A", "RCC1", "RFC2", "RGS2", "RHOG", 
+"RIDA", "RPL10", "RPL13", "RPL19", "RPL22", "RPL23", "RPL26", 
+"RPL27", "RPL27A", "RPL3", "RPL32", "RPL6", "RPS15", "RPS15A", 
+"RPS16", "RPS19", "RPS20", "RPS6", "SCARB1", "SEC23B", "SFMBT1", 
+"SFXN3", "SHMT1", "SIM2", "SIRT1", "SLA", "SLBP", "SLC19A1", 
+"SLC25A28", "SLC25A3", "SLC28A2", "SLC2A4", "SLC4A2", "SLC9A3R2", 
+"SLIT1", "SMARCAD1", "SMN1", "SNRPB", "SNRPB2", "SNRPD3", "SPAST", 
+"SQSTM1", "SRD5A1", "SRM", "SRSF1", "ST3GAL1", "STAT6", "STMN1", 
+"SURF6", "SYNGR2", "TCF12", "TCIRG1", "TERT", "TFAP4", "TFRC", 
+"TGFB1", "TGFB2", "TGFB3", "THBS1", "THBS4", "THRAP3", "TNFRSF8", 
+"TOMM20", "TOP1", "TP53", "TPM2", "TRAP1", "TSC2", "TUBG2", "TXN", 
+"TYMS", "UBA52", "UBE2C", "UCP1", "UCP3", "UROD", "UXT", "VAMP2", 
+"VEGFA", "VHL", "WDR36", "WNT10B", "WRN", "WT1", "YBX3", "ZFP36L1", 
+"ZNF146", "ZNF234", "ZNF271P", "ZNF304", "ZNF451", "ZSCAN9",
+"E2F1","ACTG1", "ACTR5", "ADARB1", "AKR7A2", "ALDH5A1", "ANAPC15", 
+"ANLN", "ANTKMT", "APRT", "ASF1B", "AURKB", "BACH1", "BARD1", 
+"BCL11A", "BIRC5", "BORA", "BRCA1", "BUB3", "CALM1", "CALR", 
+"CAV1", "CBX5", "CCNA2", "CCNB1", "CCND1", "CDC25A", "CDC25C", 
+"CDC37L1", "CDC45", "CDC6", "CDCA4", "CDCA7", "CDK1", "CDK2", 
+"CDKN2C", "CDT1", "CENPE", "CENPO", "CFAP20", "CHEK1", "CIB2", 
+"CKS2", "CREG1", "CSE1L", "CTH", "CUTC", "CUX1", "CYP27B1", "DBF4", 
+"DDX11", "DERL2", "DHFR", "DHPS", "DIRAS3", "DLEU1", "DROSHA", 
+"DUT", "E2F1", "E2F2", "E2F3", "E2F8", "EIF2B2", "EIF4H", "EPAS1", 
+"EXOSC9", "FAM210B", "FANCC", "FBXO5", "FDFT1", "FEN1", "FOXM1", 
+"FST", "GABPA", "GADD45A", "GINS1", "GMNN", "GNAS", "GNPTG", 
+"GPANK1", "H2AZ1", "H2BC11", "H2BC21", "H3C2", "HAGHL", "HCFC1", 
+"HLTF", "HMGB1", "HMGB3", "HMGN2", "HMMR", "HNRNPD", "ID3", "IFNAR2", 
+"IKBKG", "INSIG1", "ITGB3BP", "JUN", "KATNAL1", "KDM6A", "KHDRBS1", 
+"KLF10", "KLHL21", "LGALS1", "LIN54", "LUC7L", "MAD2L1", "MAP3K5", 
+"MAP3K7", "MAPRE1", "MBP", "MCM10", "MCM3", "MCM5", "MCM6", "MCM7", 
+"MCM8", "METTL3", "MFAP1", "MKI67", "MLH1", "MSH2", "MTHFD1", 
+"MYBL2", "MYC", "MYCL", "NAP1L4", "NASP", "NCL", "NDC80", "NEK2", 
+"NFE2L1", "NFKB2", "NPAT", "NUSAP1", "NXT1", "OGFR", "ORC1", 
+"P4HA2", "PARK7", "PCLAF", "PCNA", "PCNT", "PDXK", "PDXP", "PGRMC1", 
+"PIGQ", "PIM2", "PKN2", "PLCG1", "PLK1", "PLK4", "PLSCR1", "POLA2", 
+"POLD1", "POLD2", "POLE2", "POLR2D", "PPARG", "PPIA", "PRC1", 
+"PRIM2", "PRKCSH", "PRPSAP1", "PRR11", "PTGS2", "RABIF", "RAD51", 
+"RAD54L", "RB1", "RBBP5", "RBL1", "RECQL", "REL", "RFC2", "RFC3", 
+"RFC4", "RIPK2", "RPA3", "RPL23A", "RPS15", "RPS4X", "RPS6", 
+"RPS8", "RRM1", "SAYSD1", "SFPQ", "SH3BGR", "SIRPA", "SKP1", 
+"SLC25A14", "SLC25A4", "SLC2A13", "SLC35F6", "SLC44A4", "SLCO4A1", 
+"SMARCA4", "SMARCA5", "SMC2", "SMC4", "SP1", "SRPRA", "SRRM2", 
+"SRSF8", "SS18L1", "STAM", "STMN1", "SUV39H1", "SUZ12", "TERT", 
+"TFAM", "TFRC", "THOP1", "TK1", "TMPO", "TOP1", "TOP2A", "TOPBP1", 
+"TRAF2", "TSNAX", "TTK", "TYMS", "UBE2C", "UMPS", "UNG", "USP25", 
+"UXT", "VARS2", "VCP", "VHL", "VPS4A", "WDR76", "WEE1", "XRCC2", 
+"YBX3", "YWHAH", "ZFP36L1", "ZNF267",
+"E2F2","ASF1B", "CDC6", "CDCA4", "CDCA7", "CDT1", "E2F1", "MAP3K5", 
+"MCM10", "MCM5", "MCM6", "MCM7", "MYCN", "PLK1", "PLK4",
+"HBP1","MIF", "NCF1", "RUNX1", "AFF1", "ARID1B", "ARID5B", "ATAD2", 
+"CDK19", "CITED2", "CLN6", "EHD1", "ELF2", "ERCC1", "FOXO3", 
+"GABARAPL2", "GNA13", "GTF2I", "HECTD1", "HERC3", "JMJD1C", "KANK1", 
+"KLHDC2", "LRCH1", "MAP1LC3B", "MXI1", "NIPBL", "P3H4", "PHPT1", 
+"PJA2", "PPM1A", "PPM1D", "RNF13", "RNF38", "SIN3A", "SMARCA2", 
+"SQSTM1", "TLK1", "TOPORS", "VPS26A",
+"FOXM1","AURKB", "BIRC5", "BMI1", "BRCA2", "CCNB1", "CCND1", "CCND2", 
+"CDC25A", "CDC25B", "CDC25C", "CDC6", "CDK1", "CDKN1A", "CDKN1B", 
+"CDX2", "CENPA", "CENPB", "CENPF", "CKS1B", "CYP7A1", "ESR1", 
+"FOS", "FOXF1", "ITGB1", "LAMA2", "LAMA4", "MMP2", "MYC", "ONECUT1", 
+"PECAM1", "PLK1", "SKP2", "VEGFA", "XRCC1",
+"STAT2","BST2", "CFB", "IFIT3", "IRF1", "IRF7", "MX1", "OAS1", "OAS2", 
+"PML", "ADAR", "ATP13A1", "CMTR1", "DDX60L", "DHX58", "DTX3L", 
+"EIF2AK2", "EPSTI1", "FAM111A", "IFI35", "ISG15", "MOV10", "MYD88", 
+"OAS3", "OASL", "PARP10", "PARP14", "PARP9", "PIM1", "PSMB8", 
+"SAMD9", "SOCS1", "SP110", "SP140L", "STAT1", "TAP2", "TRIM21", 
+"TRIM56", "USF1", "XAF1",
+"TFDP1","CAV1", "CCNE1", "CDK1", "DHFR", "MYBL2", "PCNA", "RRM1", "TYMS", 
+"CCNE2", "CKAP2L", "HNRNPUL1", "PTMA",
+"IRF2","CASP7", "CCL5", "CD40", "CDK2", "CEACAM1", "CIITA", "CXCL10", 
+"CYBB", "DDX58", "DST", "EIF2AK2", "FOXP3", "HLA-A", "HLA-G", 
+"IFIT3", "IFNA1", "IFNB1", "IL10", "IL12A", "IL12B", "IL15", 
+"IL27", "IL4", "IL5", "IRF2", "OGN", "PSMB9", "SOCS1", "TAP1", 
+"TAP2", "TNFSF10", "TP53",
+"NFKB1","A2M", "ABCB1", "ADORA1", "AGER", "AGT", "AKT1", "ALOX5AP", 
+"AMH", "AR", "ATF3", "B2M", "BCL2", "BCL2A1", "BCL2L1", "BCL3", 
+"BIRC2", "BIRC3", "BIRC5", "BRCA1", "BRCA2", "BST1", "CCL11", 
+"CCL2", "CCL22", "CCL3", "CCL4", "CCL5", "CCND1", "CCND2", "CCR7", 
+"CD40", "CD40LG", "CD58", "CD69", "CD74", "CD80", "CD83", "CD86", 
+"CDK4", "CFLAR", "CFTR", "COL1A1", "COL1A2", "CR2", "CRMP1", 
+"CRP", "CSF1", "CSF2", "CSNK2A1", "CTCF", "CTSB", "CXCL1", "CXCL10", 
+"CXCL2", "CXCL3", "CXCL5", "CXCL8", "CYP19A1", "CYP27B1", "DEFB4A", 
+"EBI3", "EDN1", "EGFR", "ELF3", "F3", "F8", "FAS", "FASLG", "FBP1", 
+"FCGRT", "FN1", "GADD45A", "GADD45G", "GATA3", "GDNF", "GSTP1", 
+"HIF1A", "HLA-F", "HMOX1", "HSD11B2", "ICAM1", "IER3", "IFNA1", 
+"IFNB1", "IFNG", "IL10", "IL12A", "IL12B", "IL17C", "IL18", "IL1A", 
+"IL1B", "IL1RN", "IL2", "IL23A", "IL2RA", "IL4", "IL5", "IL6", 
+"IRF1", "IRF4", "IRF7", "JUNB", "KLK3", "LPL", "LTA", "MADCAM1", 
+"MAT2A", "MICA", "MMP13", "MMP14", "MMP2", "MMP3", "MMP9", "MYB", 
+"MYC", "NFKBIA", "NOD2", "NOLC1", "NOS1", "NOS2", "NOS3", "NQO1", 
+"PDE7A", "PDGFB", "PIGR", "PLAU", "PLAUR", "PTAFR", "PTGS2", 
+"PTHLH", "PTPN13", "RIPK2", "RRM2B", "SAA2", "SELE", "SERPINA3", 
+"SERPINB1", "SERPINE1", "SOCS3", "SOD2", "TBX21", "TFF3", "TFPI2", 
+"THBD", "TIMP1", "TLR2", "TNC", "TNF", "TNFAIP3", "TNFRSF10A", 
+"TNFRSF10B", "TNFSF10", "TP53", "TRAF1", "TRAF2", "VCAM1", "VEGFA", 
+"VEGFC", "VEGFD", "VIM", "VWF", "WT1", "XIAP",
+"RELA","ABCB1", "AGER", "AGT", "AKT1", "AMH", "AR", "BAX", "BCL2", 
+"BCL2A1", "BCL2L1", "BCL3", "BIRC2", "BIRC3", "BIRC5", "BNIP3", 
+"BRCA2", "CCL11", "CCL2", "CCL20", "CCL3", "CCL4", "CCL5", "CCND1", 
+"CCR5", "CD40", "CD40LG", "CD58", "CD69", "CD74", "CD83", "CD86", 
+"CDK4", "CDK6", "CDKN1A", "CFLAR", "CFTR", "COL1A1", "COL1A2", 
+"COL2A1", "CR2", "CRHR1", "CSF1", "CSF2", "CTSB", "CXCL1", "CXCL10", 
+"CXCL2", "CXCL3", "CXCL5", "CXCL8", "CXCR4", "CYP3A4", "DEFB4A", 
+"EBI3", "EDN1", "EGFR", "EGR1", "ELF3", "EPAS1", "F3", "FCGRT", 
+"FGF8", "FN1", "GADD45G", "GATA3", "GSTP1", "HDAC1", "HIF1A", 
+"ICAM1", "IER3", "IFNA1", "IFNB1", "IFNG", "IL10", "IL12A", "IL12B", 
+"IL17C", "IL18", "IL1A", "IL1B", "IL2", "IL23A", "IL2RA", "IL4", 
+"IL6", "IRF1", "IRF4", "IRF7", "KLK3", "MAT2A", "MCL1", "MICA", 
+"MMP14", "MMP2", "MMP3", "MMP9", "MYC", "NCAM1", "NFKB1", "NFKB2", 
+"NFKBIA", "NOLC1", "NOS2", "NOS3", "NR4A1", "OPTN", "PCK2", "PGR", 
+"PIGR", "PLAU", "PLAUR", "PPARA", "PPARD", "PTGS2", "PTHLH", 
+"PTPN13", "PTX3", "RIPK2", "S100A6", "SAA2", "SELE", "SERPINE1", 
+"SIRT1", "SLC25A27", "SNAI1", "SOCS3", "SOD2", "TBX21", "THBD", 
+"TIMP1", "TNC", "TNF", "TNFAIP3", "TNFRSF10A", "TNFRSF10B", "TP53", 
+"TRAF1", "TRAF2", "TRIB3", "VCAM1", "VEGFA", "VEGFD", "WT1", 
+"XIAP",
+"IRF1","CIITA", "TAP1", "ADAR", "APOL3", "CASP7", "CASP8", "NMI", 
+"NR3C1", "AFF1", "APOL2", "ARID1B", "ATF1", "BBC3", "BTN3A1", 
+"BTN3A3", "CEACAM1", "CEP128", "DDX3X", "DPYSL2", "FAM111A", 
+"FAM13A", "FANCA", "FLT3LG", "FMR1", "FOXP1", "GAB1", "GALK2", 
+"GPBP1L1", "HNRNPF", "HOXB3", "IFIT3", "IKZF4", "IL15RA", "IL1R1", 
+"IL4", "ING1", "ISG15", "KLHL8", "MAX", "MDK", "MICB", "NFE2L2", 
+"NFIC", "NFIX", "NOD1", "NUB1", "PARP14", "PATL1", "PER1", "PLAAT4", 
+"PNRC2", "PRKD2", "PRPSAP1", "PTMA", "PTPN12", "RNF111", "SEMA4B", 
+"SEMA4C", "SLC25A22", "SOCS1", "SP140L", "SRBD1", "ST6GAL1", 
+"TAL1", "TASOR2", "TGIF1", "UBE2D3", "UBE2L6", "UBR2", "WDR74", 
+"ZC3HAV1", "ZEB2", "ZFP36", "ZNF250", "ZNF566", "ZNF93",
+"MNT","GATAD2A", "PLEC", "SH3BP2", "ACIN1", "ADGRV1", "AGAP3", "ANKRD11", 
+"AP3D1", "BCL9L", "BCR", "CABLES1", "CAST", "CMIP", "COBL", "CSNK1D", 
+"ECE1", "ELL", "EPN2", "EVL", "FAM131A", "FOXK2", "GREB1", "GSN", 
+"KDM4B", "KDM6B", "LRRFIP1", "MAFK", "MARK2", "MED15", "MGRN1", 
+"MIDEAS", "MYH9", "NCOR2", "NET1", "NGLY1", "PDXK", "PDZRN3", 
+"PFKFB3", "POR", "PPP2R2C", "PRKAG2", "PRRC2B", "RAB40C", "RAI1", 
+"RAPGEF1", "RARA", "RFX2", "RGS3", "SKI", "SLC16A3", "SYMPK", 
+"TLE3", "TMEM127", "TPRG1", "VGLL4", "ZNF395",
+"SPI1","ACP5", "APBB1IP", "B2M", "BCL6", "BPI", "BTK", "CCL5", "CD14", 
+"CD163", "CD22", "CD33", "CD40", "CD47", "CD53", "CD58", "CD68", 
+"CD86", "CDKN2A", "CIITA", "CLEC4G", "CREBBP", "CSF1", "CSF1R", 
+"CSF2", "CSF2RA", "CSF3R", "CTSE", "CTSG", "CTSK", "CTSS", "CXCR1", 
+"CXCR2", "CYBB", "DAB2", "DAPK2", "EGR2", "ELANE", "ERAP2", "ERG", 
+"FCER1A", "FCGR1A", "FES", "FLI1", "FLII", "FOS", "FPR1", "GATA1", 
+"HCK", "ICAM1", "IFIT3", "IL12B", "IL1B", "IL5", "IL5RA", "ITGA2B", 
+"ITGAM", "ITGAX", "ITGB1", "ITGB2", "JCHAIN", "KCNMA1", "LCP2", 
+"LSP1", "LY96", "MACROD1", "MCM3AP", "MME", "MMP2", "MNDA", "MPO", 
+"MSR1", "MYB", "NCF1", "NCF2", "NCF4", "NR3C1", "P2RY10", "PARG", 
+"PDGFRB", "PPBP", "PRTN3", "PTGIR", "PTPRC", "PTPRE", "REL", 
+"RNASE2", "RUNX1", "SCARB1", "SCARB2", "SERPINB1", "STAT3", "TAL1", 
+"TBXAS1", "TFEC", "TGFBR2", "TLR4", "TNF", "TYROBP", "VAV1", 
+"VIP", "WAS", "ZNF300",
+"TCF7","AXIN2", "BCL2", "BIRC5", "LEF1", "SNAI2", "CCND2", "KIAA1217", 
+"TCF3", "ANKRD28", "ANTXR2", "ARHGAP15", "BIRC3", "CAMK4", "CCND1", 
+"CD86", "CDK17", "CDYL", "CORO1C", "CPPED1", "CREM", "DMD", "DOCK10", 
+"DST", "DTNB", "ERAP2", "FYB1", "GPR15", "GRM7", "GTF2F2", "HBS1L", 
+"IKZF1", "IKZF3", "KCNK1", "MAP3K1", "MARCHF8", "MMP20", "NKD1", 
+"NUMB", "PDE7A", "PHACTR1", "PLEC", "PRR5L", "PTPRC", "QPCT", 
+"RBPJ", "RGS6", "RHOH", "RIN3", "RTN4", "SKAP1", "SOX6", "SP100", 
+"SP140", "TGFBR3", "TNFRSF11B", "TNFRSF19", "TRIO", "USP48", 
+"WNK1", "ZBTB20", "ZFPM2",
+"CREB3L1","SLC1A4", "VEGFA", "ARHGEF1", "ARID1A", "ASPH", "BCAR1", "CERCAM", 
+"FNDC3B", "HMGB1", "KCNK1", "MAD2L1BP", "MTDH", "NRSN2", "PARVB", 
+"PLEC", "RUNX1", "SERPINH1", "STAR", "STARD10", "TXNDC5", "UBC",
+"RELB","ABCB1", "CCL19", "CCL21", "CD40", "PIGR", "TNFAIP3", "BCL2", 
+"CD44", "IL15", "IL6", "IRF1", "TNIP1", "TRAF3",
+"SP1","ABCB1", "ABCC1", "ABCC3", "ACAN", "ACTA1", "ACTC1", "ADA", 
+"ADAM10", "ADAM17", "ADGRE5", "ADH6", "ADIPOQ", "ADRA1A", "ADRA2B", 
+"ADRB3", "AGT", "AGTR1", "AHR", "ALDOA", "ALOX12", "ALOX15B", 
+"ALOX5", "APEX1", "APOA1", "APOE", "APP", "AR", "AREG", "ATF2", 
+"ATM", "ATP1A3", "ATP2A2", "B4GALT1", "BAX", "BCL2", "BIRC5", 
+"BLMH", "BRCA1", "BRD7", "BSG", "BTK", "C1QBP", "CA9", "CAT", 
+"CAV1", "CCK", "CCL2", "CCN2", "CCNA1", "CCND1", "CCND2", "CD14", 
+"CD151", "CD163", "CD19", "CD28", "CD44", "CD83", "CD9", "CD99", 
+"CDC25C", "CDH3", "CDK1", "CDK6", "CDKN1A", "CDKN1B", "CDKN2A", 
+"CDKN2B", "CDKN2C", "CDKN2D", "CENPW", "CERS2", "CES1", "CETP", 
+"CHRNB4", "COL18A1", "COL1A1", "COL1A2", "COL2A1", "COL7A1", 
+"CREM", "CRMP1", "CSNK2A1", "CTSD", "CTSL", "CXCL1", "CXCL5", 
+"CYP11A1", "CYP17A1", "CYP19A1", "CYP1B1", "CYP27A1", "CYP2F1", 
+"CYP3A4", "CYP3A5", "CYP3A7", "CYP7A1", "CYP7B1", "DBH", "DCK", 
+"DRG2", "E2F1", "EAPP", "EDNRB", "EGFR", "EGR1", "EPO", "EPOR", 
+"ESR1", "ETS2", "EZR", "F10", "F2R", "F3", "F7", "FAS", "FASLG", 
+"FES", "FGL2", "FMR1", "FN1", "FOS", "FOSL1", "FURIN", "FXR2", 
+"GAST", "GCLC", "GFER", "GH2", "GJA1", "GSTP1", "H4C14", "HBZ", 
+"HCN2", "HDAC4", "HLA-G", "HMGA2", "HNF4A", "HOXB7", "HPR", "HRAS", 
+"HSD17B1", "HSD17B2", "HSD3B1", "HSPA1A", "HSPB1", "HTR1A", "HTT", 
+"IER3", "IFNGR1", "IGF1R", "IGF2", "IGFBP1", "IGFBP3", "IGFBP4", 
+"IL10", "IL12B", "IL1A", "IL2", "IL2RB", "IL3", "IMPDH2", "INSR", 
+"IRS2", "ITGA2", "ITGA5", "ITGAD", "ITGAV", "ITGAX", "IVL", "JUN", 
+"KDR", "KIF2C", "KIT", "KLF8", "KLK3", "KRT16", "KRT18", "KRT19", 
+"KRT5", "LCAT", "LDHA", "LDLR", "LEP", "LHCGR", "LRP5", "LTC4S", 
+"LTF", "MACROD1", "MAOB", "MAT2A", "MAT2B", "MCL1", "MCTS1", 
+"MET", "MIF", "MIP", "MME", "MMP11", "MMP14", "MMP2", "MMP28", 
+"MMP9", "MNDA", "MPG", "MPO", "MUC2", "MUC4", "MUC5AC", "MYBL1", 
+"MYBL2", "MYC", "NFKB1", "NFKB2", "NKX2-1", "NOL7", "NOS3", "NPY", 
+"NQO2", "NR3C1", "ODC1", "OPRM1", "OXTR", "PADI1", "PADI3", "PAX6", 
+"PCK1", "PCNA", "PDE6A", "PDGFB", "PDGFC", "PDHA1", "PGR", "PIM1", 
+"PLAT", "PLAU", "PLAUR", "PNOC", "POLB", "PPL", "PRKCE", "PROC", 
+"PRSS50", "PSEN1", "PTGIR", "PTGS2", "PTH", "PTHLH", "PTK6", 
+"PTN", "PTTG1", "RARA", "RB1", "REL", "RELA", "RNLS", "RORA", 
+"RPS3A", "SCNN1G", "SCT", "SCTR", "SERPINE1", "SIGIRR", "SKP2", 
+"SLC19A1", "SLC19A3", "SLC25A5", "SLC9A2", "SMAD4", "SMPD1", 
+"SOCS1", "SOD1", "SOD2", "SP3", "SPI1", "SPN", "SPP1", "SPRY2", 
+"SRC", "SREBF1", "STAR", "STARD3", "STK11", "TAF7", "TAL1", "TBXA2R", 
+"TCN2", "TERT", "TFPI2", "TGFA", "TGFB1", "TGFBR2", "TGM4", "THBD", 
+"TIMP1", "TIMP2", "TINF2", "TMPO", "TNF", "TNFRSF10B", "TNFRSF8", 
+"TNFSF10", "TNFSF14", "TNNC1", "TP53", "TPI1", "TPMT", "TYMS", 
+"UBC", "UGDH", "UGT1A4", "UGT1A6", "UNG", "UTRN", "VAMP2", "VDR", 
+"VEGFA", "VIM", "WT1", "XIAP", "YY1",
+"E2F3","AURKA", "CDC6", "CDKN1A", "CDKN2A", "E2F1", "MAP3K5", "MCM5", 
+"MCM6", "MCM7", "MYCN", "PLK1", "TP53BP2", "TP73",
+"RUNX1","ARHGAP10", "CSF1R", "FYB1", "HIVEP3", "IL2", "IL3", "ITGAX", 
+"ITGB2", "KLK3", "LCP2", "LGALS3", "MAD2L1", "MECOM", "NFKB1", 
+"PIK3CD", "PRKCB", "PRKCQ", "PRR5L", "RORC", "SMAD3", "SPI1",
+"RELA","ABCB1", "AGER", "AGT", "AKT1", "AMH", "AR", "BAX", "BCL2", 
+"BCL2A1", "BCL2L1", "BCL3", "BIRC2", "BIRC3", "BIRC5", "BNIP3", 
+"BRCA2", "CCL11", "CCL2", "CCL20", "CCL3", "CCL4", "CCL5", "CCND1", 
+"CCR5", "CD40", "CD40LG", "CD58", "CD69", "CD74", "CD83", "CD86", 
+"CDK4", "CDK6", "CDKN1A", "CFLAR", "CFTR", "COL1A1", "COL1A2", 
+"COL2A1", "CR2", "CRHR1", "CSF1", "CSF2", "CTSB", "CXCL1", "CXCL10", 
+"CXCL2", "CXCL3", "CXCL5", "CXCL8", "CXCR4", "CYP3A4", "DEFB4A", 
+"EBI3", "EDN1", "EGFR", "EGR1", "ELF3", "EPAS1", "F3", "FCGRT", 
+"FGF8", "FN1", "GADD45G", "GATA3", "GSTP1", "HDAC1", "HIF1A", 
+"ICAM1", "IER3", "IFNA1", "IFNB1", "IFNG", "IL10", "IL12A", "IL12B", 
+"IL17C", "IL18", "IL1A", "IL1B", "IL2", "IL23A", "IL2RA", "IL4", 
+"IL6", "IRF1", "IRF4", "IRF7", "KLK3", "MAT2A", "MCL1", "MICA", 
+"MMP14", "MMP2", "MMP3", "MMP9", "MYC", "NCAM1", "NFKB1", "NFKB2", 
+"NFKBIA", "NOLC1", "NOS2", "NOS3", "NR4A1", "OPTN", "PCK2", "PGR", 
+"PIGR", "PLAU", "PLAUR", "PPARA", "PPARD", "PTGS2", "PTHLH", 
+"PTPN13", "PTX3", "RIPK2", "S100A6", "SAA2", "SELE", "SERPINE1", 
+"SIRT1", "SLC25A27", "SNAI1", "SOCS3", "SOD2", "TBX21", "THBD", 
+"TIMP1", "TNC", "TNF", "TNFAIP3", "TNFRSF10A", "TNFRSF10B", "TP53", 
+"TRAF1", "TRAF2", "TRIB3", "VCAM1", "VEGFA", "VEGFD", "WT1", 
+"XIAP",
+"HHEX","HNF4A", "TLE1", "A2M", "ACSS3", "ADAP2", "ELMO1", "NINJ2", 
+"NR2F2", "PLCG2", "SLC23A2", "WSCD1",
+"ETV4","AGTR1", "BDKRB1", "ERBB2", "ETS1", "MMP2", "MMP7", "MUC4", 
+"PLAUR", "PTGS2", "SYN2", "TGFBR2", "TIMP2", "TNF", "VIM", "WT1",
+"CEBPA","ABCB1", "ABCC1", "ACACA", "ACACB", "ACE", "ADH1B", "AEBP1", 
+"AFP", "AGT", "AGXT", "ALB", "ALOX5AP", "APBB1IP", "APOA1", "APOB", 
+"APOC3", "BCL2", "C8orf76", "CCNB1", "CCND1", "CCNE1", "CDH13", 
+"CDK2", "CDKN1A", "CES1", "CETP", "CFTR", "COMT", "CPS1", "CREB1", 
+"CRMP1", "CSF1", "CSF3R", "CSN2", "CSRP1", "CXCL8", "CXCR2", 
+"CYP3A4", "CYP3A7", "DEFA3", "E2F2", "E2F3", "EDN1", "EHHADH", 
+"ELANE", "ELN", "ENPP3", "EPO", "EPX", "F3", "F9", "FAS", "FASN", 
+"FGA", "FGL2", "FN1", "FOXA2", "GADD45A", "GAPDH", "GDNF", "GLS2", 
+"GPX4", "GSK3A", "GSK3B", "GUCY2C", "HAMP", "HMGB1", "HNF4A", 
+"HOMER3", "HP", "HPX", "HSD17B11", "HSPA4", "ICAM1", "ID1", "IGF1", 
+"IGF2", "IGFBP1", "IL10", "IL12B", "IL1A", "IL3", "IL4", "IL5", 
+"IL6", "INSR", "IRS1", "ITGA2", "ITGAL", "ITGAX", "ITGB2", "KAT7", 
+"KCNH8", "KCNMA1", "LBP", "LDLR", "LEP", "LIPC", "LTF", "MAD1L1", 
+"MAT2A", "MME", "MMP11", "MSR1", "MYBL1", "MYC", "NFYA", "NFYC", 
+"NR5A1", "PCK1", "PCK2", "PCNA", "PER2", "PPARG", "PTGS2", "RB1", 
+"RNASE2", "S100A9", "SAA1", "SCD", "SERPINC1", "SFTPD", "SLC10A1", 
+"SLC9A1", "SMYD2", "SOCS3", "SOD1", "SP1", "SPI1", "SPIDR", "SPP1", 
+"SREBF1", "SREBF2", "STAR", "STAT3", "TF", "THOC1", "TIMP2", 
+"TK1", "TNFAIP3", "TNFRSF1A", "TOP2A", "TSC22D3", "UBE2L3", "UHRF1", 
+"VLDLR", "XDH",
+"MYCN","CTSD", "MCM2", "MCM3", "MCM4", "MCM5", "MCM6", "MCM7", "MCM8", 
+"MDM2", "MXI1", "NDRG1", "NES", "TP53",
+"GATA4","ADA", "CYP17A1", "ERBB2", "IL5", "NOS3", "NPPA", "CLDN14", 
+"CLDN6", "FLNB", "KIAA1217",
+"NR2C2","ASXL1", "GCC2", "NR2C1", "SNRNP200", "TAF2", "ACBD3", "ADGRF3", 
+"AGPS", "ANAPC15", "ANKIB1", "ANXA11", "ASB8", "ATP11A", "BAZ1B", 
+"BRD9", "CCDC146", "CCDC51", "CCDC71", "CFAP61", "CHMP4B", "CLUH", 
+"CNOT9", "CWC15", "DDX42", "DICER1", "DUS1L", "EBAG9", "EHMT1", 
+"EIF3M", "FAM193B", "GCN1", "GOLGB1", "GPATCH8", "IMPACT", "KDM4D", 
+"KDM5A", "KMT5A", "KRIT1", "LSM7", "MAP3K11", "MAPKAP1", "MRPL20", 
+"MRPL33", "MRPS28", "NAA50", "NDUFAF6", "NDUFB7", "NDUFS6", "NFE2L2", 
+"NFXL1", "NOL7", "NUP107", "NUP37", "PAK4", "PARPBP", "PCBP1", 
+"PHF12", "PPIH", "PRPF40A", "PTAR1", "RAB11FIP2", "RPRD1B", "RPS21", 
+"RPS3A", "RPS6KC1", "SAP18", "SCNM1", "SELENOI", "SKIDA1", "SMARCD2", 
+"SNRPF", "SPPL2B", "SRCAP", "TBC1D22A", "TMA7", "TMCO1", "TMEM248", 
+"TNRC6A", "TOMM40", "TRIP13", "TTC31", "TTI1", "TXNL1", "USP37", 
+"VPS13D", "WTAP", "ZNF3", "ZNF513",
+"MAF", "IL4", "ITGB7", "LALBA", "MMP13", "FRMD4B", "IL2RA", "IL4R", 
+"ARHGAP25", "ARHGEF3", "ARL4C", "BRD4", "CYTH1", "CYTH4", "DOCK10", 
+"FAM78A", "FGD3", "FOXK1", "GALM", "GRAMD4", "LEF1", "LTBP3", 
+"MAP3K12", "MAP3K14", "NOL4L", "OSBPL3", "PDE4D", "PSTPIP1", 
+"RGS10", "RIPOR1", "SFXN1", "SH3BP5", "SH3KBP1", "SH3TC1", "SMAD3", 
+"SPON2", "STAB1", "TBC1D14", "TECR", "TMSB4X"),]
+
+gene_string<-rownames(Top25_genes_regulons)[abs(Top25_genes_regulons$stat)>2] # select/rank genes upon absolute t-value
+
+# Install package thata keeps our database
+#if (!require("BiocManager", quietly = TRUE))
+#    install.packages("BiocManager")
+
+#BiocManager::install("org.Hs.eg.db")
+
+# load library
+library(org.Hs.eg.db)
+library(clusterProfiler)
+
+ggo <- groupGO(gene     = gene_string,
+               OrgDb    = org.Hs.eg.db,
+               keyType  = "SYMBOL",
+               ont      = "CC",
+               level    = 3,
+               readable = TRUE)
+
+head(ggo)
+
+```
+The gene parameter is a vector of gene IDs (which can be any ID type that is supported by the corresponding OrgDb). If readable is set to TRUE the input gene IDs will be converted to gene symbols.
+
+#### GO over-representation analysis
+The ClusterProfiler package implements enrichGO() for GO over-representation tests.
+
+```{r}
+#Any gene ID type that is supported in OrgDb can be directly used in GO analyses. Users need to specify the keyType parameter to specify the input gene ID type.
+ego <- enrichGO(gene          = gene_string,
+                universe      = rownames(diffexpranalysisresults),
+                OrgDb         = org.Hs.eg.db,
+                keyType       = "SYMBOL", 
+                ont           = "CC",
+                pAdjustMethod = "BH",
+                pvalueCutoff  = 0.01,
+                qvalueCutoff  = 0.05,
+        readable      = TRUE)
+head(ego)
+
+
+```
+Now we have obtained the data for the GO over-representation analysis we are able to visualize these results.
+
+Gene ontologies (GO) are structured as a directed acyclic graph with GO terms as nodes and their relationships as edges. The most commonly used relationships in GO are:
+
+* is a
+* part of
+* has part
+* regulates
+* negatively regulates
+* positively regulates
+
+```{r, warning=FALSE, fig.height=5}
+
+# Variety of ways to visualize
+# barplot
+barplot(ego)
+# dotplot
+dotplot(ego)
+#Heat plot showing the enriched GO terms on the y-axis and the genes on the x-axis. Genes with the associated GO term are highlighted.
+heatplot(ego)
+# goplot shows the gene ontology graph with the enriched GO terms highlighted.
+goplot(ego)
+```
+
+
+
+
+
+

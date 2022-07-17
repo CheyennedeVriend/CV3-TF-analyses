@@ -1,0 +1,619 @@
+---
+title: "CV3.1: DoRoThEA - full dataset"
+author: "C.deVriend"
+date: "7-5-2022"
+output: html_document
+toc: true
+toc_float: true
+number_sections: true
+theme: readable
+code_folding: hide
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+```{css, echo=FALSE}
+pre {
+  max-height: 300px;
+  overflow-y: auto;
+}
+pre[class] {
+  max-height: 100px;
+}
+```
+
+```{r}
+# setup R-workflow
+# First we will start working with workflowr
+#install.packages("workflowr")
+library(workflowr)
+library(here)
+
+#wflow_start("/Users/cheye/OneDrive/Bureaublad/Radboud/Master 21-22/Internship/Data and analysis/CV3 TF analyses", existing = TRUE)
+#set_here(path = "C:/Users/cheye/OneDrive/Bureaublad/Radboud/Master 21-22/Internship/Data and analysis/CV3 TF analyses")
+# Check if i am working in correct directory
+here() 
+
+``` 
+# DoRothEA - transcription factor activity
+In order to understand the transcriptional regulation during the process of differentiation it is of interest to gain information about specific transcription factor activity. Therefore, the free available software DoRothEA will be employed as it contains a curated collection of transcription factors (TFs) and their transcriptional targets. The set of genes regulated by a certain TF is known as a regulon. The regulons from DoRothEA were gathered from a variety of evidence based studies. The confidence levels DoRothEA implements in the output range from A with the largest confidence to E with the lowest confidence.
+
+```{r}
+# #Main libraries
+library(readr)
+library(vsn)
+library(DESeq2)
+
+#Support functions also requires
+library(ggplot2)
+library(reshape)
+library(pheatmap)
+library(gridExtra)
+library(grid)
+library(cowplot)
+library(ggrepel)
+library(hexbin)
+
+# Install dorothea
+#if (!require("BiocManager", quietly = TRUE))
+#    install.packages("BiocManager")
+
+#BiocManager::install("dorothea")
+
+# Load required libraries and support functions
+library(progeny)
+library(dorothea)
+library(tibble)
+library(tidyr)
+library(dplyr)
+library(ggplot2)
+library(pheatmap)
+library(readr)
+
+## For optional volcano plot (related to support functions)
+library(ggrepel)
+```
+
+## Pre-processing and normalizaton
+In order to create the appropriate input for DoRothEA, the raw count matrix needs to be imported. After pre-processing and normalization a differential expression analysis will be performed by DESeq.
+
+```{r}
+# DESeq2 data transformation 
+# load library
+library(DESeq2)
+
+# Open raw count data
+ggr.rna.counts.mat.txt <- read.delim("data/ggr.rna.counts.mat.txt.gz", row.names=1)
+
+head(ggr.rna.counts.mat.txt)
+```
+
+```{r}
+# Annotate matrix with HGNC symbols
+library(biomaRt)
+library(dplyr)
+mart= useDataset("hsapiens_gene_ensembl", useMart("ensembl"))
+genes=rownames(ggr.rna.counts.mat.txt)
+gene_list= getBM(attributes = c("ensembl_gene_id", "hgnc_symbol"), values = rownames(ggr.rna.counts.mat.txt), mart=mart)
+matched= match(rownames(ggr.rna.counts.mat.txt), gene_list$ensembl_gene_id)
+# change rowname to column
+ggr.rna.counts.mat.txt<-rownames_to_column(ggr.rna.counts.mat.txt)
+# Merge set that contains count matrix and set that contains hgnc symbols
+Counts_hgnc_ensembl<-merge(ggr.rna.counts.mat.txt, gene_list, by.x="rowname",by.y="ensembl_gene_id")
+# convert data to df
+Counts_hgnc_ensembl<-as.data.frame(Counts_hgnc_ensembl)
+# Replace empty cells with NA
+Counts_hgnc_ensembl[Counts_hgnc_ensembl == ""] <- NA
+# Remove NA's # we go from 52090 rows to 37450 rows
+Counts_hgnc_ensembl<- na.omit(Counts_hgnc_ensembl)
+# Remove duplicate rownames: ‘DUXAP8’, ‘GOLGA8M’, ‘ITFG2-AS1’, ‘LINC01238’, ‘PINX1’, ‘POLR2J4’, ‘RN7SL274P’, ‘RNU6-280P’, ‘RNU6-318P’, ‘RNU6-545P’, ‘RNU6-771P’, ‘SIGLEC5’, ‘TUBB7P’,'TNFRSF10A-DT'
+# I know these are duplicates because when you want to try to change rownames it gives an error message that indicates which names are the duplicates
+Counts_hgnc_ensembl<-Counts_hgnc_ensembl[!(Counts_hgnc_ensembl$hgnc_symbol== "DUXAP8"),]
+Counts_hgnc_ensembl<-Counts_hgnc_ensembl[!(Counts_hgnc_ensembl$hgnc_symbol== "GOLGA8M"),]
+Counts_hgnc_ensembl<-Counts_hgnc_ensembl[!(Counts_hgnc_ensembl$hgnc_symbol== "ITFG2-AS1"),]
+Counts_hgnc_ensembl<-Counts_hgnc_ensembl[!(Counts_hgnc_ensembl$hgnc_symbol== "LINC01238"),]
+Counts_hgnc_ensembl<-Counts_hgnc_ensembl[!(Counts_hgnc_ensembl$hgnc_symbol== "PINX1"),]
+Counts_hgnc_ensembl<-Counts_hgnc_ensembl[!(Counts_hgnc_ensembl$hgnc_symbol== "POLR2J4"),]
+Counts_hgnc_ensembl<-Counts_hgnc_ensembl[!(Counts_hgnc_ensembl$hgnc_symbol== "RN7SL274P"),]
+Counts_hgnc_ensembl<-Counts_hgnc_ensembl[!(Counts_hgnc_ensembl$hgnc_symbol== "RNU6-280P"),]
+Counts_hgnc_ensembl<-Counts_hgnc_ensembl[!(Counts_hgnc_ensembl$hgnc_symbol== "RNU6-318P"),]
+Counts_hgnc_ensembl<-Counts_hgnc_ensembl[!(Counts_hgnc_ensembl$hgnc_symbol== "RNU6-545P"),]
+Counts_hgnc_ensembl<-Counts_hgnc_ensembl[!(Counts_hgnc_ensembl$hgnc_symbol== "RNU6-771P"),]
+Counts_hgnc_ensembl<-Counts_hgnc_ensembl[!(Counts_hgnc_ensembl$hgnc_symbol== "SIGLEC5"),]
+Counts_hgnc_ensembl<-Counts_hgnc_ensembl[!(Counts_hgnc_ensembl$hgnc_symbol== "TUBB7P"),]
+Counts_hgnc_ensembl<-Counts_hgnc_ensembl[!(Counts_hgnc_ensembl$hgnc_symbol== "TNFRSF10A-DT"),]
+# Rownames # This left us with 37424 rows
+rownames(Counts_hgnc_ensembl)=Counts_hgnc_ensembl$hgnc_symbol
+# Remove ID columns
+Counts_hgnc_ensembl<-dplyr::select(Counts_hgnc_ensembl,-c(rowname))
+Counts_hgnc_ensembl<-dplyr::select(Counts_hgnc_ensembl,-c(hgnc_symbol))
+```
+```{r}
+# first remove rows that contain only 0
+Counts_hgnc_ensembl<-Counts_hgnc_ensembl[rowSums(Counts_hgnc_ensembl)>0,]
+# Leaves us with 19186 genes. However, we will need to remove counts below 10 as well as the differential analysis function also does this. We want to keep both the data frames exactly the same amount of rows.
+# Remove rows count below 10; leaves us with 16504 genes
+Counts_hgnc_ensembl<-Counts_hgnc_ensembl[rowSums(Counts_hgnc_ensembl)>9,]
+``` 
+After annotation we will perform the differential expression analysis with the DESeq package.
+```{r}
+# create sample information columns
+Sample_name<- c('d00_b1', 'd00_b2', 'd05_b1', 'd05_b2', 'd10_b1', 'd10_b2', 'd15_b1', 'd15_b2', 'd20_b1', 'd20_b2', 'd25_b1', 'd25_b2', 'd30_b1', 'd30_b2', 'd45_b1', 'd45_b2', 'd50_b1', 'd50_b2', 'd60_b1', 'd60_b2')
+Bulk_set<- c('original', 'duplicate', 'original', 'duplicate', 'original', 'duplicate', 'original', 'duplicate', 'original', 'duplicate', 'original', 'duplicate', 'original', 'duplicate', 'original', 'duplicate', 'original', 'duplicate', 'original', 'duplicate')
+Timepoint_days<-c(0,0,0.5,0.5,1,1,1.5,1.5,2,2,2.5,2.5,3,3,4.5,4.5,5,5,6,6)
+# combine columns # Sample info
+Sample_information<-data.frame(Sample_name, Bulk_set, Timepoint_days)
+
+# DESeq2 dataset
+ddsASMtime <-DESeqDataSetFromMatrix(countData = Counts_hgnc_ensembl, colData = Sample_information, design = ~Bulk_set + Timepoint_days)
+# filter zero counts out
+ddsASMtime<-ddsASMtime[rowSums(counts(ddsASMtime))>1,]
+# Stabalize variance
+ddsASMtime=estimateSizeFactors(ddsASMtime)
+ddsASMtime=estimateDispersions(ddsASMtime)
+gene_expr=getVarianceStabilizedData(ddsASMtime) # THIS IS THE DATASET THAT CONTAINS VST COUNTS; USE THIS FOR VISUALIZATION
+
+head(gene_expr)
+```
+
+Now we have imported the raw count matrix and annotated the genes we can perform differential expression analysis.
+```{r}
+# Perform DEseq differential expression analysis
+Differentialexpressiontotalset<- DESeq(ddsASMtime)
+diffexpranalysisresults<-results(Differentialexpressiontotalset)
+```
+
+Now we have accurately prepared all datasets for TF analysis. 
+
+## Transcription factor activity with DoRothEA
+We will estimate the transcription factor (TF) activity using DoRothEA. We will select interactions with confidence level A,B and C.
+```{r}
+## We load Dorothea Regulons
+data(dorothea_hs, package = "dorothea")
+regulons <- dorothea_hs %>%
+  dplyr::filter(confidence %in% c("A", "B","C"))
+```
+Take note that for DoRothEA, we will proceed differently than in PROGENy. We have an incredible amount of TFs that show activity, which indicates we will not be able to visualize all of them in the same heatmap. That is why we first compute TF activity enrichment analysis using the statistics from the differential expression analysis. This will allow us to select the TFs whose activity varies with the condition under the study.
+```{r}
+# First convert to df then sort on p.adj then create new df that contains only the tvalues
+Results_DESeq<-as.data.frame(diffexpranalysisresults)
+Results_DESeq<-Results_DESeq[order(Results_DESeq$padj),]
+Results_DESeq_t<-as.data.frame(subset(Results_DESeq, select = -c(baseMean:lfcSE,pvalue:padj)))
+
+
+# It is important to set the parameter eset.filter to FALSE. In this case we set the minimum size of regulons to five (minsize).
+tf_activities_stat <- dorothea::run_viper(Results_DESeq_t, regulons,
+    options =  list(minsize = 5, eset.filter = FALSE, 
+    verbose = FALSE, nes = TRUE))
+```
+Now we will display the top 25 normalized enrichment scores (NES) for the TFs in a bar plot; similar to the one we generated for PROGENy.
+```{r}
+tf_activities_stat_top25 <- tf_activities_stat %>%
+    as.data.frame() %>% 
+    rownames_to_column(var = "GeneID") %>%
+    dplyr::rename(NES = "stat") %>%
+    dplyr::top_n(25, wt = abs(NES)) %>%
+    dplyr::arrange(NES) %>% 
+    dplyr::mutate(GeneID = factor(GeneID))
+
+ggplot(tf_activities_stat_top25,aes(x = reorder(GeneID, NES), y = NES)) + 
+    geom_bar(aes(fill = NES), stat = "identity") +
+    scale_fill_gradient2(low = "darkblue", high = "indianred", 
+        mid = "whitesmoke", midpoint = 0) + 
+    theme_minimal() +
+    theme(axis.title = element_text(face = "bold", size = 12),
+        axis.text.x = 
+            element_text(angle = 45, hjust = 1, size =10, face= "bold"),
+        axis.text.y = element_text(size =10, face= "bold"),
+        panel.grid.major = element_blank(), 
+        panel.grid.minor = element_blank()) +
+    xlab("Transcription Factors")
+```
+Now we will display the top 50 normalized enrichment scores (NES) for the TFs in a bar plot; similar to the one we generated for PROGENy.
+```{r}
+tf_activities_stat_top50 <- tf_activities_stat %>%
+    as.data.frame() %>% 
+    rownames_to_column(var = "GeneID") %>%
+    dplyr::rename(NES = "stat") %>%
+    dplyr::top_n(50, wt = abs(NES)) %>%
+    dplyr::arrange(NES) %>% 
+    dplyr::mutate(GeneID = factor(GeneID))
+
+top50<-ggplot(tf_activities_stat_top50,aes(x = reorder(GeneID, NES), y = NES)) + 
+    geom_bar(aes(fill = NES), stat = "identity") +
+    scale_fill_gradient2(low = "darkblue", high = "indianred", 
+        mid = "whitesmoke", midpoint = 0) +     theme_minimal() +
+    theme(axis.title = element_text(face = "bold", size = 12),
+        axis.text.x = 
+            element_text(angle = 45, hjust = 1, size =6, face= "bold"),
+        axis.text.y = element_text(size =10, face= "bold"),
+        panel.grid.major = element_blank(), 
+        panel.grid.minor = element_blank()) +
+    xlab("Transcription Factors")
+top50
+```
+
+### Gaining insight into the most deregulated transcription factors
+To interpret the results it might be of interest to target the most deregulated TFs. 
+
+```{r}
+# Create list containing df for loop purposes
+
+set_name<-c("Khavari total dataset")
+set_name<-as.vector(set_name)
+Results_DESeq_t.list<-list(Results_DESeq_t)
+names(Results_DESeq_t.list)<-set_name
+
+# Start loop to create tf list 
+TF.list<-list()
+for (i in seq_along(set_name)) {
+  print(paste("Select TF showing activity:", set_name[i])) # print progress
+  data.loop<-as.data.frame(Results_DESeq_t.list[[i]])
+  results.loop<-dorothea::run_viper(data.loop, regulons, options =  list(minsize = 5, eset.filter = FALSE, verbose = FALSE, nes = TRUE))
+  
+TF.list[[set_name[[i]]]]<- results.loop
+}   
+
+# Now we create a list object that contains the top 50 TF's per timepoint
+# Then start other loop 
+Top.50.totalset.list<-list()
+
+for (i in seq_along(TF.list)){
+  print(paste("Select top 50 TF:", names(TF.list)[i])) # print progress # take names of list on [i]
+  data.loop<-as.data.frame(TF.list[[i]])
+  result.loop<-  data.loop %>%
+    as.data.frame() %>% 
+    rownames_to_column(var = "GeneID") %>%
+    dplyr::rename(NES = "stat") %>%
+    dplyr::top_n(50, wt = abs(NES)) %>%
+    dplyr::arrange(NES) %>% 
+    dplyr::mutate(GeneID = factor(GeneID))
+  
+  Top.50.totalset.list[[names(TF.list)[[i]]]]<- result.loop # we take the names of the list on [i]
+  
+}
+
+# Create vector list containing TF names
+selected.tf.totalset<-list()
+
+for (i in seq_along(TF.list)) {
+  data.loop<-as.data.frame(TF.list[[i]]) %>%
+    mutate("abs.t"=  abs(stat)) %>%
+        dplyr::top_n(50)
+  
+  selected.tf.totalset[[names(TF.list)[[i]]]]<-rownames(data.loop)
+}
+
+# Create enrichment plots for each TF
+# We are going to create a list in which we extract the downstream targets of a certain TF from our DESeq results
+# Use volcano plots in order to look at the contribution of individual genes to the enrichement of a certain TF
+
+overview.fig.list<-list()
+for (i in seq_along(selected.tf.totalset)) {
+
+  tf.timepoint<-selected.tf.totalset[[i]]  
+  # contains names of selected tf's 
+  
+  plot.list.totalset <- list() # create list that will contain the plot information per timepoint
+  tf.loop<-Top.50.totalset.list[[i]]$GeneID
+  
+  for (j in seq_along(tf.timepoint)) {
+     print(paste("Information on tf:", tf.timepoint[[j]], "for timepoint:", names(selected.tf.totalset)[[i]]))
+    
+    # extract the target genes for TF j
+    targets.loop<-regulons$target[regulons$tf == tf.timepoint[[j]]]
+    
+    # extract the deseq data for these genes
+    data.loop<-as.data.frame(res.deseq.filtered[[i]][rownames(res.deseq.filtered[[i]]) %in% targets.loop,])
+    
+    
+    # make sure all labels will show in the plots even though there could be overlap
+    options(ggrepel.max.overlaps = Inf)
+    
+    # plot the volcanoplots
+ subplot<-   ggplot(data = data.loop, 
+            aes(x =  log2FoldChange, 
+                y = -log10(padj), 
+                colour= expression,
+                label = delabel)) +
+  geom_point(alpha=0.4, size=2.5) + geom_text(size = 10) +
+    scale_color_manual(values=c("Down" = "Blue", "Stable" = "Grey", "Up" = "Red"))  +
+  geom_vline(xintercept=c(-1,1),lty=4,col="black",lwd=0.8) +
+  geom_hline(yintercept = 1.301,lty=4,col="black",lwd=0.8) +
+  labs(x="log2(fold change)",
+       y="-log10 (adjusted p-value)",
+       title= paste("DE targets regulated by:", tf.timepoint[[j]]))  +
+  theme_bw()+
+  theme(plot.title = element_text(hjust = 0.5), 
+        legend.position="right", 
+        legend.title = element_text(size = 20)
+        ,
+        axis.text = element_text(size = 20), # change scale sizes on x and y axis
+        axis.title = element_text(size = 20), # change label sizes on x and yaxis   
+        title = element_text(size = 25))
+    
+  plot.list.timepoint[[tf.loop[j]]]<-subplot
+    
+  } # end second loop
+  
+  
+  overview.per.timepoint<-plot_grid(plotlist = plot.list.timepoint, nrow = 25, labels = paste("Timepoint:",names(selected.tf.totalset)[[i]])) + theme(plot.background = element_rect(color = "black", size = 3))
+  # nrow indicates how many rows we need per timepoint. e.g. we have 50 TF's so we will get about 4 TF's per row
+  
+  overview.fig.list[[names(selected.tf.totalset)[[i]]]] <-overview.per.timepoint
+  
+  
+} # end loop 1
+```
+```{r, warning=FALSE, fig.height=400, fig.width=50}
+# plotting our subplots
+plot_grid(plotlist = overview.fig.list, ncol = 1)
+
+```
+## Normalized enrichment score deviations
+An interesting observation of these plots is the fact that most do not show specific underenrichment or overenrichment of the downstream targets. This can be partially dedicated to the fact that the test-statistic (t) is converted to the NES, which is different to how it is usually performed. It has also become quite clear that non of these transcription factors show significant ES. 
+
+A gene set enrichment analysis is based upon an a priori defined set of genes "S" (e.g., genes encoding for a specific pathway, genes associated with a GO-term, or the genes in the operon dataset). In order to determine which genes of S are randomly distributed throughout a list called "L" a variety of steps are performed:
+
+1. Calculation of the enrichment score (ES)
+The enrichment score (ES) reflects the degree to which a certain gene set is overrepresented at the extremes. Those extremes indicate the genes present at the top or bottom of L. The score itself is calculated by going through list L, while increasing the running sum statistic every time a gene in S is encountered. In contrast the score is reduced for a specific gene if the gene is not present in S. The correlation of the gene with the phenotype, or in our case state of differentiation, determines the magnitude of those increments. The enrichment score can be described as the maximum deviation from zero encountered in L, which is very similar to a weighted Kolmogorov-Smirnov-like statistic.
+
+2. Estimation of significance levels of ES
+The statistical significance (nominal p-value) is estimated from the ES by employing a phenotype-based permutation test. In our case this would probably be an operon based permutation. This test is supposed to guarantee the complexity of the correlation within the structure of the expression data. In the original frame of a GSEA the phenotype labels are permuted while the ES are recomputed for the permuted data, which generates a null distribution for the ES. The nominal p-value from the observed ES, is then calculated relative to the null distribution. 
+
+3. Adjustment for multiple hypothesis testing
+Due to the fact that in a GSEA a large gene set is evaluated, adjustments for multiple testing needs to be applied. This is usually done by normalizing the ES for each gene set to account for the size, which then yields the normalized enrichment score (NES). Thereafter, a control for the proportion of false positives is made by calculating the false discovery rate (FDR). The FDR represents the estimated probability that a gene set with a given NES indicates a false positive finding. To be consise the FDR is computd by comparing the tails of the observed distribution and null distribution for the NES.
+
+## Transcription factor activity over time
+```{r}
+tf_activities_counts <- 
+    dorothea::run_viper(gene_expr, regulons,
+    options =  list(minsize = 20, eset.filter = FALSE,     cores = 1, verbose = FALSE, method = c("scale")))
+
+# For top 25
+
+tf_activities_counts_filter_25 <- tf_activities_counts %>% 
+    as.data.frame() %>% 
+    rownames_to_column(var = "GeneID") %>%
+    dplyr::filter(GeneID %in% tf_activities_stat_top25$GeneID) %>%
+    column_to_rownames(var = "GeneID") %>%
+    as.matrix()
+
+tf_activities_vector_25 <- as.vector(tf_activities_counts_filter_25)
+
+paletteLength <- 100
+myColor <- 
+    colorRampPalette(c("darkblue", "whitesmoke","indianred"))(paletteLength)
+
+dorotheaBreaks25 <- c(seq(min(tf_activities_vector_25), 0, 
+    length.out=ceiling(paletteLength/2) + 1),
+    seq(max(tf_activities_vector_25)/paletteLength, 
+    max(tf_activities_vector_25), 
+    length.out=floor(paletteLength/2)))
+dorothea_hmap <- pheatmap(tf_activities_counts_filter_25, cluster_cols = FALSE,
+    fontsize=14, fontsize_row = 8, fontsize_col = 8, 
+    color=myColor, breaks = dorotheaBreaks25,
+    main = "Dorothea ABC top 25", angle_col = 45,
+    treeheight_col = 0,  border_color = NA)
+
+# For top 50
+tf_activities_counts_filter_50 <- tf_activities_counts %>% 
+    as.data.frame() %>% 
+    rownames_to_column(var = "GeneID") %>%
+    dplyr::filter(GeneID %in% tf_activities_stat_top50$GeneID) %>%
+    column_to_rownames(var = "GeneID") %>%
+    as.matrix()
+
+tf_activities_vector_50 <- as.vector(tf_activities_counts_filter_50)
+
+dorotheaBreaks50 <- c(seq(min(tf_activities_vector_50), 0, 
+    length.out=ceiling(paletteLength/2) + 1),
+    seq(max(tf_activities_vector_50)/paletteLength, 
+    max(tf_activities_vector_50), 
+    length.out=floor(paletteLength/2)))
+dorothea_hmap <- pheatmap(tf_activities_counts_filter_50,cluster_cols = FALSE,
+    fontsize=14, fontsize_row = 8, fontsize_col = 8, 
+    color=myColor, breaks = dorotheaBreaks50,
+    main = "Dorothea ABC top 50", angle_col = 45,
+    treeheight_col = 0,  border_color = NA)
+```
+These results visually indicate upregulation during the first timeperiod of differentiation while they downregulate at later points of differentiation. There could be hypothesized these TFs could be seen as a preliminary proliferative marker, as proliferation markers upregulate during the first period of differentiation while they downregulate at a later timepoint.In addition, these transcription factors could for example be upstream targets of those proliferation markers. 
+
+```{r}
+# I quickly want to visualize E2F1 activity and E2F4 activity for my presentation
+data_keep_rows <- c("E2F1", "E2F4")  
+data_subset_e2f <- gene_expr[rownames(gene_expr) %in% data_keep_rows, ]  # Extract rows from data
+
+data_subset_e2f<-as.data.frame(data_subset_e2f) # covert to df
+transpose<- as.data.frame(t(data_subset_e2f))
+
+library(ggplot2)
+par(mfrow=c(2,2))
+# If you want lineplots add argument type = 'l'
+# E2F1
+plot(transpose$E2F1, xlab = element_blank(), ylab = "E2F1 expression over time", xaxt = "n")
+axis(1, at=1:20, labels = rownames(transpose), las=2)
+# E2F4
+plot(transpose$E2F4, xlab = element_blank(), ylab = "E2F4 expression over time", xaxt = "n")
+axis(1, at=1:20, labels = rownames(transpose), las=2)
+
+
+
+```
+One of the additional visualizations I will add in this document regards the overlap between certain TFs and the pathway activity of jak/stat.
+```{r}
+# First we select the activity of certain TF's that we find interesting
+# E2F4, E2F1, STAT2
+data_keep_rows <- c("E2F1", "E2F4", "STAT2")  
+Interesting_TFs_dorotheascore<-tf_activities_counts_filter_50[rownames(tf_activities_counts_filter_50) %in% data_keep_rows, ]
+Interesting_TFs_dorotheascore<-t(Interesting_TFs_dorotheascore)
+Interesting_TFs_dorotheascore<-as.data.frame(Interesting_TFs_dorotheascore)
+
+# Then we load our progeny pathway activity set
+Pathway_scores_progeny<-as.data.frame(Pathway_scores_progeny)
+#Pathway_scores_progeny<-column_to_rownames(Pathway_scores_progeny, var = "rowname")
+#Pathway_scores_progeny<-Pathway_scores_progeny[-c(1)]
+# Create subset to jakstat specifically
+Jakstat_activity<-Pathway_scores_progeny[c(4)]
+
+
+par(mfrow=c(2,2))
+# Create jakstat plot
+plot(Jakstat_activity$JAK.STAT, xlab = element_blank(), ylab = "JAK/STAT activity", xaxt = "n")
+axis(1, at=1:20, labels = rownames(Pathway_scores_progeny), las=2)
+# Create E2F1 tf plot
+plot(Interesting_TFs_dorotheascore$STAT2, xlab = element_blank(), ylab = "STAT2 activity", xaxt = "n")
+axis(1, at=1:20, labels = rownames(Interesting_TFs_dorotheascore), las=2)
+# Create E2F1 tf plot
+plot(Interesting_TFs_dorotheascore$E2F1, xlab = element_blank(), ylab = "E2F1 activity", xaxt = "n")
+axis(1, at=1:20, labels = rownames(Interesting_TFs_dorotheascore), las=2)
+# Create e2f4 tf plot
+plot(Interesting_TFs_dorotheascore$E2F4, xlab = element_blank(), ylab = "E2F4 activity", xaxt = "n")
+axis(1, at=1:20, labels = rownames(Interesting_TFs_dorotheascore), las=2)
+
+#--------------------------------
+```
+
+```{r, fig.height=15, fig.width=10}
+# Correlation plots
+# E2F1 vs jakstat
+# To visualize overlap we need to rename columns to score
+#names(Jakstat_activity)<-c('Activity_score')
+#Jakstat_activity<-rownames_to_column(Jakstat_activity, "Timepoints")
+# create E2F1 score subset
+E2F1<-Interesting_TFs_dorotheascore[-c(2,3)]
+names(E2F1)<-c('Activity_score')
+rownames(E2F1)<-NULL
+rownames(E2F1)<-rownames(Pathway_scores_progeny)
+E2F1<-rownames_to_column(E2F1, "Timepoints")
+
+# Include color column
+Jakstat_activity$Pathway_TF<-'JAK-STAT pathway'
+E2F1$Pathway_TF<-'TF E2F1'
+
+# Create df with columns next to each other so we can bind them
+combined_columns<-E2F1$Timepoints
+combined_columns<-as.data.frame(combined_columns)
+combined_columns$E2F1_Activity_score<-E2F1$Activity_score
+combined_columns$Jakstat_activity_Activity_score<-c(Jakstat_activity$JAK.STAT)
+combined_columns<-column_to_rownames(combined_columns,var = "combined_columns" ) 
+
+# calculate correlation coefficient
+coefficient_E2F1_jakstat<- cor(combined_columns$E2F1_Activity_score,combined_columns$Jakstat_activity_Activity_score, method = "spearman")
+
+par(mfrow=c(2,2))
+
+# Create plot with nice blue color
+P1<-plot(combined_columns$E2F1_Activity_score,combined_columns$Jakstat_activity_Activity_score, pch = 19, xlab="TF E2F1 activity score", ylab="JAK/STAT pathway activity score",  col = "lightblue", main = "Transcription factor E2F1 - JAK/STAT pathway correlation")
+# Add regression line
+abline(lm(combined_columns$Jakstat_activity_Activity_score ~ combined_columns$E2F1_Activity_score), col = "gray", lwd = 3)
+# Add text to plot
+text(paste("Correlation: 0.83 "), x=-4.5, y=1.5)
+
+#--------
+
+# create E2F4 score subset
+E2F4<-Interesting_TFs_dorotheascore[-c(1,3)]
+names(E2F4)<-c('Activity_score')
+rownames(E2F4)<-NULL
+rownames(E2F4)<-rownames(Pathway_scores_progeny)
+E2F4<-rownames_to_column(E2F4, "Timepoints")
+
+# Include color column
+Jakstat_activity$Pathway_TF<-'JAK-STAT pathway'
+E2F4$Pathway_TF<-'TF E2F4'
+
+# Create df with columns next to each other so we can bind them
+combined_columns<-E2F4$Timepoints
+combined_columns<-as.data.frame(combined_columns)
+combined_columns$E2F4_Activity_score<-E2F4$Activity_score
+combined_columns$Jakstat_activity_Activity_score<-c(Jakstat_activity$JAK.STAT)
+combined_columns<-column_to_rownames(combined_columns,var = "combined_columns" ) 
+
+# calculate correlation coefficient
+coefficient_E2F4_jakstat<- cor(combined_columns$E2F4_Activity_score,combined_columns$Jakstat_activity_Activity_score, method = "spearman")
+
+# Create plot with nice blue color
+P2<-plot(combined_columns$E2F4_Activity_score,combined_columns$Jakstat_activity_Activity_score, pch = 19, xlab="TF E2F4 activity score", ylab="JAK/STAT pathway activity score",  col = "lightblue", main = "Transcription factor E2F4 - JAK/STAT pathway correlation")
+# Add regression line
+abline(lm(combined_columns$Jakstat_activity_Activity_score ~ combined_columns$E2F4_Activity_score), col = "gray", lwd = 3)
+# Add text to plot
+text(paste("Correlation: 0.86 "), x=-4.5, y=1.5)
+#------------
+
+# create STAT2 score subset
+STAT2<-Interesting_TFs_dorotheascore[-c(1,2)]
+names(STAT2)<-c('Activity_score')
+rownames(STAT2)<-NULL
+rownames(STAT2)<-rownames(Pathway_scores_progeny)
+STAT2<-rownames_to_column(STAT2, "Timepoints")
+
+# Include color column
+Jakstat_activity$Pathway_TF<-'JAK-STAT pathway'
+STAT2$Pathway_TF<-'TF STAT2'
+
+# Create df with columns next to each other so we can bind them
+combined_columns<-STAT2$Timepoints
+combined_columns<-as.data.frame(combined_columns)
+combined_columns$STAT2_Activity_score<-STAT2$Activity_score
+combined_columns$Jakstat_activity_Activity_score<-c(Jakstat_activity$JAK.STAT)
+combined_columns<-column_to_rownames(combined_columns,var = "combined_columns" ) 
+
+# calculate correlation coefficient
+coefficient_STAT2_jakstat<- cor(combined_columns$STAT2_Activity_score,combined_columns$Jakstat_activity_Activity_score, method = "spearman")
+
+# Create plot with nice blue color
+P3<-plot(combined_columns$STAT2_Activity_score,combined_columns$Jakstat_activity_Activity_score, pch = 19, xlab="TF STAT2 activity score", ylab="JAK/STAT pathway activity score",  col = "lightblue", main = "Transcription factor STAT2 - JAK/STAT pathway correlation")
+# Add regression line
+abline(lm(combined_columns$Jakstat_activity_Activity_score ~ combined_columns$STAT2_Activity_score), col = "gray", lwd = 3)
+# Add text to plot
+text(paste("Correlation: 0.96 "), x=-4.5, y=1.5)
+
+
+``` 
+```{r}
+# we saw that the largest overlap was between 4 sets 7 tfs in total extract these from gene_Expr create heatmap
+# E2F1, GRHL2, IRF9, MYBL2, OTX2, STAT2, TCF4 # OTHER NAME FOR TCF4 IS ITF2
+data_keep <- c("E2F1", "GRHL2", "IRF9", "MYBL2", "OTX2", "STAT2", "TCF4","ITF2","SEF2-1B")
+# Extract count data for these tfs
+largest_overlap_tfs<-gene_expr[rownames(gene_expr) %in% data_keep, ]
+# heatmap
+pheatmap(largest_overlap_tfs, cluster_cols = FALSE, cluster_rows = TRUE, color = myColor)
+# heatmap with rowscale
+pheatmap(largest_overlap_tfs, scale = "row", cluster_cols = FALSE, cluster_rows = TRUE, color = myColor)
+
+```
+
+```{r}
+# Explore connection between JAK/STAT activity and EGF pathways
+# Use pathway scores PROGENy
+JAKSTAT_EGFR<-rownames(combined_columns)
+JAKSTAT_EGFR<-as.data.frame(JAKSTAT_EGFR)
+JAKSTAT_EGFR$JAKSTAT_ACTIVITY<-Pathway_scores_progeny$JAK.STAT
+JAKSTAT_EGFR$EGFR_ACTIVITY<-Pathway_scores_progeny$EGFR
+JAKSTAT_EGFR<-column_to_rownames(JAKSTAT_EGFR, var = "JAKSTAT_EGFR")
+
+# Calculate correlation between variables
+coefficient_JAKSTAT_EGFR<- cor(JAKSTAT_EGFR$JAKSTAT_ACTIVITY,JAKSTAT_EGFR$EGFR_ACTIVITY, method = "spearman")
+
+plot(JAKSTAT_EGFR$JAKSTAT_ACTIVITY,JAKSTAT_EGFR$EGFR_ACTIVITY, pch = 19, xlab="JAK/STAT pathway activity score", ylab="EGFR pathway activity score",  col = "lightblue", main = "JAK/STAT - EGFR pathway correlation")
+# Add regression line
+abline(lm(JAKSTAT_EGFR$EGFR_ACTIVITY ~ JAKSTAT_EGFR$JAKSTAT_ACTIVITY), col = "gray", lwd = 3)
+# Add text to plot
+text(paste("Correlation: 0.83 "), x=-1, y=1.25)
+
+
+```
+
+
+
+
+
+
+
+
+
+
+
+

@@ -1,0 +1,1263 @@
+---
+title: "CV3.2: DoRoThEA - subsets"
+author: "C.deVriend"
+date: "7-5-2022"
+output: html_document
+toc: true
+toc_float: true
+number_sections: true
+theme: readable
+code_folding: hide
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+```{css, echo=FALSE}
+pre {
+  max-height: 300px;
+  overflow-y: auto;
+}
+pre[class] {
+  max-height: 100px;
+}
+```
+
+```{r}
+# setup R-workflow
+# First we will start working with workflowr
+#install.packages("workflowr")
+library(workflowr)
+library(here)
+
+#wflow_start("/Users/cheye/OneDrive/Bureaublad/Radboud/Master 21-22/Internship/Data and analysis/CV3 TF analyses", existing = TRUE)
+#set_here(path = "C:/Users/cheye/OneDrive/Bureaublad/Radboud/Master 21-22/Internship/Data and analysis/CV3 TF analyses")
+# Check if i am working in correct directory
+here() 
+
+``` 
+
+# DoRothEA - transcription factor activity
+In order to understand the transcriptional regulation during the process of differentiation it is of interest to gain information about specific transcription factor activity. Therefore, the free available software DoRothEA will be employed as it contains a curated collection of transcription factors (TFs) and their transcriptional targets. The set of genes regulated by a certain TF is known as a regulon. The regulons from DoRothEA were gathered from a variety of evidence based studies. The confidence levels DoRothEA implements in the output range from A with the largest confidence to E with the lowest confidence.
+
+In this particular analysis we will asses each of the subsets created from the Khavari P. et al., (2020) dataset. 
+
+
+```{r}
+# Main libraries
+library(readr)
+library(vsn)
+library(DESeq2)
+
+#Support functions also requires
+library(ggplot2)
+library(reshape)
+library(pheatmap)
+library(gridExtra)
+library(grid)
+library(cowplot)
+library(ggrepel)
+library(hexbin)
+
+# Install dorothea
+#if (!require("BiocManager", quietly = TRUE))
+#    install.packages("BiocManager")
+
+#BiocManager::install("dorothea")
+
+# Load required libraries and support functions
+library(progeny)
+library(dorothea)
+library(tibble)
+library(tidyr)
+library(dplyr)
+library(ggplot2)
+library(pheatmap)
+library(readr)
+library(readxl)
+```
+
+
+## Loading the subsets
+The Khavari subsets have been created during previous analyses. Therefore, we can just load the data.
+
+*Subsets:*
+
+1. Comparison day 0 and day 0.5
+
+2. Comparison day 0.5 and day 1
+
+3. Comparison day 1 and day 1.5
+
+4. Comparison day 1.5 and day 2
+
+5. Comparison day 2 and day 2.5
+
+6. Comparison day 2.5 and day 3
+
+7. Comparison day 3 and day 4.5
+
+8. Comparison day 4.5 and day 5
+
+9. Comparison day 5 and day 6
+
+10. Comparison day 6 and day 0
+```{r, data loading}
+# THESE FILES ARE FROM THE RMD FILE "DESEQ_ANALYSIS_SUBSETS_DENSITYPLOTS.rmd"
+# Loading the VST count matrixes per subset 
+library(here)
+library(readxl)
+here()
+gene_expr_0_0.5 <- read_excel("data/Normalized count matrixes/gene_expr_0_0.5.xlsx")
+gene_expr_0.5_1 <- read_excel("data/Normalized count matrixes/gene_expr_0.5_1.xlsx")
+gene_expr_1_1.5 <- read_excel("data/Normalized count matrixes/gene_expr_1_1.5.xlsx")
+gene_expr_1.5_2 <- read_excel("data/Normalized count matrixes/gene_expr_1.5_2.xlsx")
+gene_expr_2_2.5 <- read_excel("data/Normalized count matrixes/gene_expr_2_2.5.xlsx")
+gene_expr_2.5_3 <- read_excel("data/Normalized count matrixes/gene_expr_2.5_3.xlsx")
+gene_expr_3_4.5 <- read_excel("data/Normalized count matrixes/gene_expr_3_4.5.xlsx")
+gene_expr_4.5_5 <- read_excel("data/Normalized count matrixes/gene_expr_4.5_5.xlsx")
+gene_expr_5_6 <- read_excel("data/Normalized count matrixes/gene_expr_5_6.xlsx")
+gene_expr_6_0 <- read_excel("data/Normalized count matrixes/gene_expr_6_0.xlsx")
+
+# Column to rownames
+gene_expr_0_0.5<-column_to_rownames(gene_expr_0_0.5, var = "rowname")
+gene_expr_0.5_1<-column_to_rownames(gene_expr_0.5_1, var = "rowname")
+gene_expr_1_1.5<-column_to_rownames(gene_expr_1_1.5, var = "rowname") 
+gene_expr_1.5_2<- column_to_rownames(gene_expr_1.5_2, var = "rowname")
+gene_expr_2_2.5<- column_to_rownames(gene_expr_2_2.5, var = "rowname")
+gene_expr_2.5_3<-column_to_rownames(gene_expr_2.5_3, var = "rowname")
+gene_expr_3_4.5<-column_to_rownames(gene_expr_3_4.5, var = "rowname")
+gene_expr_4.5_5<-column_to_rownames(gene_expr_4.5_5, var = "rowname")
+gene_expr_5_6<- column_to_rownames(gene_expr_5_6, var = "rowname")
+gene_expr_6_0<-column_to_rownames(gene_expr_6_0, var = "rowname")
+
+# Loading DESeq data per subset
+library(readxl)
+Deseq_Results_0_0_5_p0_05 <- readxl::read_excel("data/Differential expression results/Deseq_Results_0_0.5_p0.05.xlsx")
+Deseq_Results_0_5_1_p0_05 <- readxl::read_excel("data/Differential expression results/Deseq_Results_0.5_1_p0.05.xlsx" )
+Deseq_Results_1_1_5_p0_05 <- readxl::read_excel("data/Differential expression results/Deseq_Results_1_1.5_p0.05.xlsx" )
+Deseq_Results_1_5_2_p0_05 <- readxl::read_excel("data/Differential expression results/Deseq_Results_1.5_2_p0.05.xlsx" )
+Deseq_Results_2_2_5_p0_05 <- readxl::read_excel("data/Differential expression results/Deseq_Results_2_2.5_p0.05.xlsx" )
+Deseq_Results_2_5_3_p0_05 <- readxl::read_excel("data/Differential expression results/Deseq_Results_2.5_3_p0.05.xlsx" )
+Deseq_Results_3_4_5_p0_05 <- readxl::read_excel("data/Differential expression results/Deseq_Results_3_4.5_p0.05.xlsx" )
+Deseq_Results_4_5_5_p0_05 <- readxl::read_excel("data/Differential expression results/Deseq_Results_4.5_5_p0.05.xlsx" )
+Deseq_Results_5_6_p0_05 <- readxl::read_excel("data/Differential expression results/Deseq_Results_5_6_p0.05.xlsx" )
+Deseq_Results_6_0_p0_05 <- readxl::read_excel("data/Differential expression results/Deseq_Results_6_0_p0.05.xlsx" )
+```
+
+## Transcription factor activity
+Now we have the appropriate input for DoRothEA (normalized count matrices and differential expression analysis), we can start looking at the transcription factor (TF) activity. Keep in mind that we will only select interactions with confidence level A,B and C.
+
+```{r, loading dorothea regulons}
+## We load Dorothea Regulons
+data(dorothea_hs, package = "dorothea")
+regulons <- dorothea_hs %>%
+  dplyr::filter(confidence %in% c("A", "B","C"))
+```
+
+
+Take note that for DoRothEA, we will proceed differently than in PROGENy. We have an incredible amount of TFs that show activity, which indicates we will not be able to visualize all of them in the same heatmap. That is why we first compute TF activity enrichment analysis using the statistics from the differential expression analysis. This will allow us to select the TFs whose activity varies with the condition under the study.
+
+
+```{r, add_DElabel_column}
+# In order to visualize the genes contributing to TF enrichment, we need to include a column that includes the DESeq label names.
+# We use these DESeq label names in order to visualize the differentially expressed genes in a volcano plot; only differentially expressed genes will then show the DESeq label in the graph
+# Add label column that only includes a label if it is up or down
+
+# Subset 1
+# First remove NA's from expression column otherwise we'll get an error later
+# 381 genes differentially expressed
+Deseq_Results_0_0_5_p0_05<-na.omit(Deseq_Results_0_0_5_p0_05)
+Deseq_Results_0_0_5_p0_05$delabel<-NA
+Deseq_Results_0_0_5_p0_05$delabel[Deseq_Results_0_0_5_p0_05$expression !="Stable"] <- Deseq_Results_0_0_5_p0_05$rowname[Deseq_Results_0_0_5_p0_05$expression !="Stable"]
+
+# Subset 2
+# First remove NA's from expression column otherwise we'll get an error later
+# 90 genes differentially expressed
+Deseq_Results_0_5_1_p0_05<-na.omit(Deseq_Results_0_5_1_p0_05)
+Deseq_Results_0_5_1_p0_05$delabel<-NA
+Deseq_Results_0_5_1_p0_05$delabel[Deseq_Results_0_5_1_p0_05$expression !="Stable"] <- Deseq_Results_0_5_1_p0_05$rowname[Deseq_Results_0_5_1_p0_05$expression !="Stable"]
+
+# Subset 3
+# First remove NA's from expression column otherwise we'll get an error later
+# 266 genes differentially expressed
+Deseq_Results_1_1_5_p0_05<-na.omit(Deseq_Results_1_1_5_p0_05)
+Deseq_Results_1_1_5_p0_05$delabel<-NA
+Deseq_Results_1_1_5_p0_05$delabel[Deseq_Results_1_1_5_p0_05$expression !="Stable"] <- Deseq_Results_1_1_5_p0_05$rowname[Deseq_Results_1_1_5_p0_05$expression !="Stable"]
+
+# Subset 4
+# First remove NA's from expression column otherwise we'll get an error later
+# 406 genes differentially expressed
+Deseq_Results_1_5_2_p0_05<-na.omit(Deseq_Results_1_5_2_p0_05)
+Deseq_Results_1_5_2_p0_05$delabel<-NA
+Deseq_Results_1_5_2_p0_05$delabel[Deseq_Results_1_5_2_p0_05$expression !="Stable"] <- Deseq_Results_1_5_2_p0_05$rowname[Deseq_Results_1_5_2_p0_05$expression !="Stable"]
+
+# Subset 5
+# First remove NA's from expression column otherwise we'll get an error later
+# 318 genes differentially expressed
+Deseq_Results_2_2_5_p0_05<-na.omit(Deseq_Results_2_2_5_p0_05)
+Deseq_Results_2_2_5_p0_05$delabel<-NA
+Deseq_Results_2_2_5_p0_05$delabel[Deseq_Results_2_2_5_p0_05$expression !="Stable"] <- Deseq_Results_2_2_5_p0_05$rowname[Deseq_Results_2_2_5_p0_05$expression !="Stable"]
+
+# Subset 6
+# First remove NA's from expression column otherwise we'll get an error later
+# 40  genes differentially expressed
+Deseq_Results_2_5_3_p0_05<-na.omit(Deseq_Results_2_5_3_p0_05)
+Deseq_Results_2_5_3_p0_05$delabel<-NA
+Deseq_Results_2_5_3_p0_05$delabel[Deseq_Results_2_5_3_p0_05$expression !="Stable"] <- Deseq_Results_2_5_3_p0_05$rowname[Deseq_Results_2_5_3_p0_05$expression !="Stable"]
+
+# Subset 7
+# First remove NA's from expression column otherwise we'll get an error later
+# 684 genes differentially expressed
+Deseq_Results_3_4_5_p0_05<-na.omit(Deseq_Results_3_4_5_p0_05)
+Deseq_Results_3_4_5_p0_05$delabel<-NA
+Deseq_Results_3_4_5_p0_05$delabel[Deseq_Results_3_4_5_p0_05$expression !="Stable"] <- Deseq_Results_3_4_5_p0_05$rowname[Deseq_Results_3_4_5_p0_05$expression !="Stable"]
+
+# Subset 8
+# First remove NA's from expression column otherwise we'll get an error later
+# 174 genes differentially expressed
+Deseq_Results_4_5_5_p0_05<-na.omit(Deseq_Results_4_5_5_p0_05)
+Deseq_Results_4_5_5_p0_05$delabel<-NA
+Deseq_Results_4_5_5_p0_05$delabel[Deseq_Results_4_5_5_p0_05$expression !="Stable"] <- Deseq_Results_4_5_5_p0_05$rowname[Deseq_Results_4_5_5_p0_05$expression !="Stable"]
+
+# Subset 9
+# First remove NA's from expression column otherwise we'll get an error later
+# 1555 genes differentially expressed
+Deseq_Results_5_6_p0_05<-na.omit(Deseq_Results_5_6_p0_05)
+Deseq_Results_5_6_p0_05$delabel<-NA
+Deseq_Results_5_6_p0_05$delabel[Deseq_Results_5_6_p0_05$expression !="Stable"] <- Deseq_Results_5_6_p0_05$rowname[Deseq_Results_5_6_p0_05$expression !="Stable"]
+
+# Subset 10
+# First remove NA's from expression column otherwise we'll get an error later
+# 514 genes differentially expressed
+Deseq_Results_6_0_p0_05<-na.omit(Deseq_Results_6_0_p0_05)
+Deseq_Results_6_0_p0_05$delabel<-NA
+Deseq_Results_6_0_p0_05$delabel[Deseq_Results_6_0_p0_05$expression !="Stable"] <- Deseq_Results_6_0_p0_05$rowname[Deseq_Results_6_0_p0_05$expression !="Stable"]
+
+```
+
+```{r}
+# Column to rowname otherwise the viper function will not work!
+library(tibble)
+
+Deseq_Results_0_0_5_p0_05 <- column_to_rownames(Deseq_Results_0_0_5_p0_05, var = "rowname")
+Deseq_Results_0_5_1_p0_05<- column_to_rownames(Deseq_Results_0_5_1_p0_05, var = "rowname")
+Deseq_Results_1_1_5_p0_05<- column_to_rownames(Deseq_Results_1_1_5_p0_05, var = "rowname")
+Deseq_Results_1_5_2_p0_05<-column_to_rownames(Deseq_Results_1_5_2_p0_05, var = "rowname")
+Deseq_Results_2_2_5_p0_05<-column_to_rownames(Deseq_Results_2_2_5_p0_05, var = "rowname")
+Deseq_Results_2_5_3_p0_05<-column_to_rownames(Deseq_Results_2_5_3_p0_05 , var = "rowname")
+Deseq_Results_3_4_5_p0_05<-column_to_rownames(Deseq_Results_3_4_5_p0_05 , var = "rowname")
+Deseq_Results_4_5_5_p0_05<-column_to_rownames(Deseq_Results_4_5_5_p0_05, var = "rowname")
+Deseq_Results_5_6_p0_05<-column_to_rownames(Deseq_Results_5_6_p0_05, var = "rowname")
+Deseq_Results_6_0_p0_05<-column_to_rownames(Deseq_Results_6_0_p0_05, var = "rowname")
+
+```
+
+
+```{r, DESeq-results-list}
+# Now we have imported the data into Rstudio we can create a list with all of these objects so it is easier to create loops
+DESeq_result_list<-list(Deseq_Results_0_0_5_p0_05,Deseq_Results_0_5_1_p0_05,Deseq_Results_1_1_5_p0_05,Deseq_Results_1_5_2_p0_05,Deseq_Results_2_2_5_p0_05,Deseq_Results_2_5_3_p0_05,Deseq_Results_3_4_5_p0_05,Deseq_Results_4_5_5_p0_05,Deseq_Results_5_6_p0_05,Deseq_Results_6_0_p0_05)
+
+# create vector with names 
+#DESeq_names<-c("0vs0.5","0.5vs1","1vs1.5","1.5vs2","2vs2.5","2.5vs3","3vs4.5","4.5vs5","5vs6","6vs0")
+DESeq_names<-c("Deseq_Results_0_0.5_p0.05","Deseq_Results_0.5_1_p0.05","Deseq_Results_1_1.5_p0.05","Deseq_Results_1.5_2_p0.05","Deseq_Results_2_2.5_p0.05","Deseq_Results_2.5_3_p0.05","Deseq_Results_3_4.5_p0.05","Deseq_Results_4.5_5_p0.05","Deseq_Results_5_6_p0.05","Deseq_Results_6_0_p0.05")
+DESeq_names<-as.vector(DESeq_names)
+
+# List 
+names(DESeq_result_list)<-DESeq_names
+
+```
+
+```{r, filter-DESeq-results-based-upon-p-value}
+library(dplyr)
+
+# Create list to save the filtered objects in 
+res.deseq.filtered<-list()
+
+
+# Loop for filtering
+for (i in seq_along(DESeq_names)) {
+  print(paste("Filter p-adj:", DESeq_names[i])) # print progress
+res.deseq.filtered[[DESeq_names[[i]]]]<-DESeq_result_list[[i]] %>% arrange(across("padj")) # line that says filter the data that is in the list and save it in res.deseq.filtered
+} # This loop gives one df in a list that only contains the padj columns of each df
+```
+
+```{r, create_list_containing_tval}
+# Create list to save the filtered objects in 
+res.deseq.filtered.tvalue.list<-list()
+
+# Loop for filtering
+for (i in seq_along(res.deseq.filtered)) {
+  print(paste("Extracting test statistic:", DESeq_names[i])) # print progress
+res.deseq.filtered.tvalue.list[[DESeq_names[[i]]]]<-as.data.frame(subset(res.deseq.filtered[[i]], select = -c(baseMean:lfcSE,pvalue:delabel))) # line that says extract t values/stat from each list item and save it in res.deseq.filtered.tvalue
+} # This loop gives one df in a list that onldy contains the tvalue only per timepoint
+```
+
+```{r, TF.activities.list}
+TF.activity.list<-list()
+
+for (i in seq_along(DESeq_names)) {
+  print(paste("Select TF showing activity:", DESeq_names[i])) # print progress
+  data.loop<-as.data.frame(res.deseq.filtered.tvalue.list[[i]])
+  results.loop<-dorothea::run_viper(data.loop, regulons, options =  list(minsize = 5, eset.filter = FALSE, verbose = FALSE, nes = TRUE))
+  
+TF.activity.list[[DESeq_names[[i]]]]<- results.loop
+} 
+```
+
+``` {r}
+# Now we create a list object that contains the top 50 TF's per timepoint
+Top.50.list<-list()
+
+for (i in seq_along(TF.activity.list)){
+  print(paste("Select top 50 TF:", names(TF.activity.list)[i])) # print progress # take names of list on [i]
+  data.loop<-as.data.frame(TF.activity.list[[i]])
+  result.loop<-  data.loop %>%
+    as.data.frame() %>% 
+    rownames_to_column(var = "GeneID") %>%
+    dplyr::rename(NES = "stat") %>%
+    dplyr::top_n(50, wt = abs(NES)) %>%
+    dplyr::arrange(NES) %>% 
+    dplyr::mutate(GeneID = factor(GeneID))
+  
+  Top.50.list[[names(TF.activity.list)[[i]]]]<- result.loop # we take the names of the list on [i]
+  
+}
+```
+
+```{r}
+# Create list with the plot objects
+top.50.plot.list<-list()
+
+# load library
+library(ggplot2)
+
+# Create vector for appropriate names
+Enrichment_comparison_names<-c("Transcription factor activity day 0 vs 0.5", "Transcription factor activity day 0.5 vs 1", "Transcription factor activity day 1 vs 1.5","Transcription factor activity day 1.5 vs 2","Transcription factor activity day 2 vs 2.5","Transcription factor activity day 2.5 vs 3","Transcription factor activity day 3 vs 4.5", "Transcription factor activity day 4.5 vs 5", "Transcription factor activity day 5 vs 6", "Transcription factor activity day 6 vs 0")
+
+# create list with names
+Enrichment_comparison_names.list<-list()
+# Randomly copy data from last tf.activity.list but we will create a new list and overwrite the names so we can use the names as plot titles
+Enrichment_comparison_names.list<-Top.50.list
+# Give list the names defined in enrichment_comparison_names; we need this to give meaningful names to the plots
+names(Enrichment_comparison_names.list)<-Enrichment_comparison_names
+
+# Start loop
+for (i in seq_along(Top.50.list)){
+  print(paste("Create plot:", names(Top.50.list)[i])) # print progress # take names of list on [i]
+  
+  data.loop<-as.data.frame(Top.50.list[[i]]) # convert list to df and mention it needs to go through [i]
+  
+  # call ggplot object
+  result.loop<- ggplot(data.loop,aes(x = reorder(GeneID, NES), y = NES)) + 
+    geom_bar(aes(fill = NES), stat = "identity") +
+    scale_fill_gradient2(low = "darkblue", high = "indianred", 
+        mid = "whitesmoke", midpoint = 0) + 
+    theme_minimal() +
+    theme(axis.title = element_text(face = "bold", size = 12),
+        axis.text.x = 
+            element_text(angle = 45, hjust = 1, size =6, face= "bold"),
+        axis.text.y = element_text(size =12, face= "bold"),
+        panel.grid.major = element_blank(), 
+        panel.grid.minor = element_blank()) +
+    xlab(names(Enrichment_comparison_names.list)[[i]])
+  
+  top.50.plot.list[[names(TF.activity.list)[[i]]]]<- result.loop
+}
+
+```
+```{r, warning=FALSE}
+# First create individual plots per timepoint for closer inspection
+top.50.plot.list$Deseq_Results_0_0.5_p0.05
+top.50.plot.list$Deseq_Results_0.5_1_p0.05
+top.50.plot.list$Deseq_Results_1_1.5_p0.05
+top.50.plot.list$Deseq_Results_1.5_2_p0.05
+top.50.plot.list$Deseq_Results_2_2.5_p0.05
+top.50.plot.list$Deseq_Results_2.5_3_p0.05
+top.50.plot.list$Deseq_Results_3_4.5_p0.05
+top.50.plot.list$Deseq_Results_4.5_5_p0.05
+top.50.plot.list$Deseq_Results_5_6_p0.05
+top.50.plot.list$Deseq_Results_6_0_p0.05
+```
+```{r, fig.height=20, warning=FALSE}
+# Create plots
+library(ggpubr)
+library(cowplot)
+
+# Create a plot tht combines the figures
+plot_grid(top.50.plot.list$Deseq_Results_0_0.5_p0.05, top.50.plot.list$Deseq_Results_0.5_1_p0.05, top.50.plot.list$Deseq_Results_1_1.5_p0.05, top.50.plot.list$Deseq_Results_1.5_2_p0.05,top.50.plot.list$Deseq_Results_2_2.5_p0.05,top.50.plot.list$Deseq_Results_2.5_3_p0.05,top.50.plot.list$Deseq_Results_3_4.5_p0.05,top.50.plot.list$Deseq_Results_4.5_5_p0.05,top.50.plot.list$Deseq_Results_5_6_p0.05, top.50.plot.list$Deseq_Results_6_0_p0.05,
+         ncol =2 , nrow = 5)
+```
+
+
+Based upon the enrichment plots, of the top 50 TFs showing activity, we can see that there are large dynamics within the time point comparisons. This is of interest as we want to unravel the transcriptional activity during these time points.
+
+To interpret these results it might be of interest to target the most deregulated TFs. Therefore we will assess the top 50 TF's from each comparison.
+
+```{r}
+# Convert rownames back to column names ("ID")
+Deseq_Results_0_0_5_p0_05 <- rownames_to_column(Deseq_Results_0_0_5_p0_05, var = "ID")
+Deseq_Results_0_5_1_p0_05<- rownames_to_column(Deseq_Results_0_5_1_p0_05, var = "ID")
+Deseq_Results_1_1_5_p0_05<- rownames_to_column(Deseq_Results_1_1_5_p0_05, var = "ID")
+Deseq_Results_1_5_2_p0_05<-rownames_to_column(Deseq_Results_1_5_2_p0_05, var = "ID")
+Deseq_Results_2_2_5_p0_05<-rownames_to_column(Deseq_Results_2_2_5_p0_05, var = "ID")
+Deseq_Results_2_5_3_p0_05<-rownames_to_column(Deseq_Results_2_5_3_p0_05 , var = "ID")
+Deseq_Results_3_4_5_p0_05<-rownames_to_column(Deseq_Results_3_4_5_p0_05 , var = "ID")
+Deseq_Results_4_5_5_p0_05<-rownames_to_column(Deseq_Results_4_5_5_p0_05, var = "ID")
+Deseq_Results_5_6_p0_05<-rownames_to_column(Deseq_Results_5_6_p0_05, var = "ID")
+Deseq_Results_6_0_p0_05<-rownames_to_column(Deseq_Results_6_0_p0_05, var = "ID")
+
+```
+
+
+```{r}
+# convert rownames from res.deseq.filtered to column ID; we do this so we can later match column names between two df's 
+# create new list item for this
+res.deseq.filtered.rownametocolumn<- list()
+# Start loop
+for (i in seq_along(res.deseq.filtered)){
+  print(paste("Converting rowname to colname:", names(res.deseq.filtered)[i])) # print progress # take names of list on [i]
+  
+  data.loop<-as.data.frame(res.deseq.filtered[[i]]) # convert list to df and mention it needs to go through [i]
+  
+  # call rowname to column command
+  result.loop<-rownames_to_column(data.loop)
+  
+  # Save result.loop to new list item
+  res.deseq.filtered.rownametocolumn[[names(res.deseq.filtered)[[i]]]]<- result.loop
+}
+
+```
+
+
+```{r}
+# select the most deregulated TFs per timepoint and select the target genes
+selected.tf<-list()
+
+for (i in seq_along(TF.activity.list)) {
+  data.loop<-as.data.frame(TF.activity.list[[i]]) %>%
+    mutate("abs.t"=  abs(stat)) %>%
+    dplyr::select(abs.t) %>%
+    dplyr::top_n(50)
+  
+  selected.tf[[names(TF.activity.list)[[i]]]]<-rownames(data.loop)
+}
+```
+
+```{r, Visualize_TF_targets_volcanoplot }
+# We are going to create a list in which we extract the downstream targets of a certain TF from our DESeq results
+# Use volcano plots in order to look at the contribution of individual genes to the enrichement of a certain TF
+
+overview.fig.list<-list()
+for (i in seq_along(selected.tf)) {
+
+  tf.timepoint<-selected.tf[[i]]  
+  # contains names of selected tf's 
+  
+  plot.list.timepoint <- list() # create list that will contain the plot information per timepoint
+  tf.loop<-Top.50.list[[i]]$GeneID
+  
+  for (j in seq_along(tf.timepoint)) {
+     print(paste("Information on tf:", tf.timepoint[[j]], "for timepoint:", names(selected.tf)[[i]]))
+    
+    # extract the target genes for TF j
+    targets.loop<-regulons$target[regulons$tf == tf.timepoint[[j]]]
+    
+    # extract the deseq data for these genes
+    data.loop<-as.data.frame(res.deseq.filtered[[i]][rownames(res.deseq.filtered[[i]]) %in% targets.loop,])
+    
+    # make sure all labels will show in the plots even though there could be overlap
+    options(ggrepel.max.overlaps = Inf)
+    
+    # plot the volcanoplots
+ subplot<-   ggplot(data = data.loop, 
+            aes(x =  log2FoldChange, 
+                y = -log10(padj), 
+                colour= expression,
+                label = delabel)) +
+  geom_point(alpha=0.4, size=2.5) + geom_text(size = 10) +
+    scale_color_manual(values=c("Down" = "Blue", "Stable" = "Grey", "Up" = "Red"))  +
+  geom_vline(xintercept=c(-1,1),lty=4,col="black",lwd=0.8) +
+  geom_hline(yintercept = 1.301,lty=4,col="black",lwd=0.8) +
+  labs(x="log2(fold change)",
+       y="-log10 (adjusted p-value)",
+       title= paste("DE targets regulated by:", tf.timepoint[[j]]))  +
+  theme_bw()+
+  theme(plot.title = element_text(hjust = 0.5), 
+        legend.position="right", 
+        legend.title = element_blank()
+        ,
+        axis.text = element_text(size = 12), # change scale sizes on x and y axis
+        axis.title = element_text(size = 12), # change label sizes on x and yaxis   
+        title = element_text(size = 18))
+    
+  subplot<-  ggplot(data = data.loop, 
+           aes(x = log2FoldChange, 
+              y = -log10(padj),
+             label = delabel)) +
+  geom_point(alpha=0.4, size=2.5)+ geom_text() +
+  xlim(c(-6,6)) +
+  scale_color_manual(values=c("blue", "grey","red"))+
+  scale_color_manual(values=c(ifelse(log2FoldChange<-1, "blue", ifelse(log2FoldChange>1, "red", "grey")))) +
+  geom_vline(xintercept=c(-1,1),lty=4,col="black",lwd=0.8) +
+  geom_hline(yintercept = 1.301,lty=4,col="black",lwd=0.8) +
+  labs(x="log2(fold change)",
+  y="-log10 (p-value)",
+  title=paste("DE targets regulated by:", tf.timepoint[[j]]))  +
+  theme_bw()+
+  theme(plot.title = element_text(hjust = 0.5), 
+  legend.position="right", 
+  legend.title = element_blank())
+    
+    plot.list.timepoint[[tf.loop[j]]]<-subplot
+    
+  } # end second loop
+  
+  
+  overview.per.timepoint<-plot_grid(plotlist = plot.list.timepoint, nrow = 25, labels = paste("Timepoint:",names(selected.tf)[[i]])) + theme(plot.background = element_rect(color = "black", size = 3))
+  # nrow indicates how many rows we need per timepoint. e.g. we have 50 TF's so we will get about 4 TF's per row
+  
+  overview.fig.list[[names(selected.tf)[[i]]]] <-overview.per.timepoint
+  
+  
+} # end loop 1
+```
+
+
+### Time point dependent transcription factor activity
+
+In order to gain insight into the individual transcription factor dynamics per time point comparison, a variety of volcano plots have been generated for all the TF's and their respective targets.
+
+```{r,warning=FALSE}
+# library 
+library(ggplotify)
+# Code to visualize these plots but is masked in html otherwise knitting will fail
+
+# plotting per timepoint
+# Subset1
+#subset1_plots<-as.ggplot(overview.fig.list$Deseq_Results_0_0.5_p0.05)
+#subset1_plots
+
+# Subset2
+#subset2_plots<-as.ggplot(overview.fig.list$Deseq_Results_0.5_1_p0.05)
+#subset2_plots
+
+# Subset 3
+#subset3_plots<-as.ggplot(overview.fig.list$Deseq_Results_1_1.5_p0.05)
+#subset3_plots
+
+# Subset 4
+#subset4_plots<-as.ggplot(overview.fig.list$Deseq_Results_1.5_2_p0.05)
+#subset4_plots
+
+# Subset 5
+#subset5_plots<-as.ggplot(overview.fig.list$Deseq_Results_2_2.5_p0.05)
+#subset5_plots
+
+# Subset 6
+#subset6_plots<-as.ggplot(overview.fig.list$Deseq_Results_2.5_3_p0.05)
+#subset6_plots
+
+# Subset 7
+#subset7_plots<-as.ggplot(overview.fig.list$Deseq_Results_3_4.5_p0.05)
+#subset7_plots
+
+# Subset 8
+#subset8_plots<-as.ggplot(overview.fig.list$Deseq_Results_4.5_5_p0.05)
+#subset8_plots
+
+# Subset 9
+#subset9_plots<-as.ggplot(overview.fig.list$Deseq_Results_5_6_p0.05)
+#subset9_plots
+
+# Subset 10
+#subset10_plots<-as.ggplot(overview.fig.list$Deseq_Results_6_0_p0.05)
+#subset10_plots
+
+```
+
+
+
+```{r, warning=FALSE}
+# plotting our subplots Code to do it in one figure 
+#plot_grid(plotlist = overview.fig.list, ncol = 1)
+
+```
+
+
+# Transcription factor activity over time
+
+Now we have elucidated which TFs are the most active, based upon the differentially expressed targets, it is of interest to look at the differential expression of the TFs themselves over time. Therefore, this section is meant to elucidate the exact dynamics within the different time comparisons as well as the dynamics over the total differentiation course. 
+
+```{r}
+
+# create list that will contain the count objects per subset
+Count.matrixes.list<-list(as.data.frame(gene_expr_0_0.5),as.data.frame(gene_expr_0.5_1),as.data.frame(gene_expr_1_1.5),as.data.frame(gene_expr_1.5_2),as.data.frame(gene_expr_2_2.5),as.data.frame(gene_expr_2.5_3),as.data.frame(gene_expr_3_4.5),as.data.frame(gene_expr_4.5_5),as.data.frame(gene_expr_5_6),as.data.frame(gene_expr_6_0))
+
+names(Count.matrixes.list) <- c( "Counts_0_0.5_p0.05","Counts_0.5_1_p0.05","Counts_1_1.5_p0.05","Counts_1.5_2_p0.05", "Counts_2_2.5_p0.05","Counts_2.5_3_p0.05", "Counts_3_4.5_p0.05","Counts_4.5_5_p0.05",
+ "Counts_5_6_p0.05","Counts_6_0_p0.05" )
+```
+
+
+```{r}
+# Create subsets that contains the top TF's per timeframe
+# We need to specifiy per timepoint otherwise viper does not understand how to access the data
+data.loop.subset1 <-as.data.frame(dorothea::run_viper(Count.matrixes.list$Counts_0_0.5_p0.05, regulons,
+    options =  list(minsize = 5, eset.filter = FALSE, 
+    cores = 1, verbose = FALSE, nes = TRUE)))
+    
+data.loop.subset2<-as.data.frame(dorothea::run_viper(Count.matrixes.list$Counts_0.5_1_p0.05, regulons,
+    options =  list(minsize = 5, eset.filter = FALSE, 
+    cores = 1, verbose = FALSE, nes = TRUE))) 
+    
+data.loop.subset3<-as.data.frame(dorothea::run_viper(Count.matrixes.list$Counts_1_1.5_p0.05, regulons,
+    options =  list(minsize = 5, eset.filter = FALSE, 
+    cores = 1, verbose = FALSE, method = c("scale"))))   
+    
+data.loop.subset4<-as.data.frame(dorothea::run_viper(Count.matrixes.list$Counts_1.5_2_p0.05, regulons,
+options =  list(minsize = 5, eset.filter = FALSE, 
+cores = 1, verbose = FALSE, method = c("scale"))))   
+    
+data.loop.subset5<-as.data.frame(dorothea::run_viper(Count.matrixes.list$Counts_2_2.5_p0.05, regulons,
+    options =  list(minsize = 5, eset.filter = FALSE, 
+    cores = 1, verbose = FALSE, method = c("scale"))))    
+    
+data.loop.subset6<-as.data.frame(dorothea::run_viper(Count.matrixes.list$Counts_2.5_3_p0.05, regulons,
+    options =  list(minsize = 5, eset.filter = FALSE, 
+    cores = 1, verbose = FALSE, method = c("scale"))))    
+    
+data.loop.subset7<-as.data.frame(dorothea::run_viper(Count.matrixes.list$Counts_3_4.5_p0.05, regulons,
+    options =  list(minsize = 5, eset.filter = FALSE, 
+    cores = 1, verbose = FALSE, method = c("scale"))))    
+    
+data.loop.subset8<-as.data.frame(dorothea::run_viper(Count.matrixes.list$Counts_4.5_5_p0.05, regulons,
+    options =  list(minsize = 5, eset.filter = FALSE, 
+    cores = 1, verbose = FALSE, method = c("scale"))))    
+    
+data.loop.subset9<-as.data.frame(dorothea::run_viper(Count.matrixes.list$Counts_5_6_p0.05, regulons,
+    options =  list(minsize = 5, eset.filter = FALSE, 
+    cores = 1, verbose = FALSE, method = c("scale"))))    
+    
+data.loop.subset10<-as.data.frame(dorothea::run_viper(Count.matrixes.list$Counts_6_0_p0.05, regulons,
+    options =  list(minsize = 5, eset.filter = FALSE, 
+    cores = 1, verbose = FALSE, method = c("scale"))))
+
+```
+```{r}
+# Create list objects that will contain the df's per timepoint
+for (i in seq_along(Count.matrixes.list)){
+  print(paste("Top 50 TF's at timepoint:", names(Count.matrixes.list)[i]))
+  
+# Create list that contains tf_activity counts per subset
+tf_activities_counts_list<-list(data.loop.subset1,data.loop.subset2,data.loop.subset3,data.loop.subset4,data.loop.subset5, data.loop.subset6, data.loop.subset7, data.loop.subset8, data.loop.subset9, data.loop.subset10)
+
+# Rename list elements # we cannot do this in loop [[names(datasetx)[[i]]]] as it will randomly assign list names
+names(tf_activities_counts_list) <- c( "Counts_0_0.5_p0.05","Counts_0.5_1_p0.05","Counts_1_1.5_p0.05","Counts_1.5_2_p0.05", "Counts_2_2.5_p0.05","Counts_2.5_3_p0.05", "Counts_3_4.5_p0.05","Counts_4.5_5_p0.05",
+ "Counts_5_6_p0.05","Counts_6_0_p0.05" )  
+}
+```
+
+
+```{r}
+paletteLength <- 100
+
+for (i in seq_along(tf_activities_counts_list[i])){
+  print(paste("Creating top 50 vector for timepoint:", names(tf_activities_counts_list)[i]))
+
+tf_activities_50 <- tf_activities_counts_list
+tf_activities_vector_50<-as.vector(tf_activities_50)
+
+# Cannot loop over a vector do this by hand; these are the breaks we need per subset to create the heatmaps
+dorotheaBreaks50_subset1 <- c(seq(min(tf_activities_vector_50$Counts_0_0.5_p0.05), 0, 
+    length.out=ceiling(paletteLength/2) + 1),
+    seq(max(tf_activities_vector_50$Counts_0_0.5_p0.05)/paletteLength, 
+    max(tf_activities_vector_50$Counts_0_0.5_p0.05), 
+    length.out=floor(paletteLength/2)))  
+
+dorotheaBreaks50_subset2 <- c(seq(min(tf_activities_vector_50$Counts_0.5_1_p0.05), 0, 
+    length.out=ceiling(paletteLength/2) + 1),
+    seq(max(tf_activities_vector_50$Counts_0.5_1_p0.05))/paletteLength, 
+    max(tf_activities_vector_50$Counts_0.5_1_p0.05), 
+    length.out=floor(paletteLength/2))  
+
+dorotheaBreaks50_subset3 <- c(seq(min(tf_activities_vector_50$Counts_1_1.5_p0.05), 0, 
+    length.out=ceiling(paletteLength/2) + 1),
+    seq(max(tf_activities_vector_50$Counts_1_1.5_p0.05)/paletteLength, 
+    max(tf_activities_vector_50$Counts_1_1.5_p0.05), 
+    length.out=floor(paletteLength/2))) 
+
+dorotheaBreaks50_subset4 <- c(seq(min(tf_activities_vector_50$Counts_1.5_2_p0.05), 0, 
+    length.out=ceiling(paletteLength/2) + 1),
+    seq(max(tf_activities_vector_50$Counts_1.5_2_p0.05)/paletteLength, 
+    max(tf_activities_vector_50$Counts_1.5_2_p0.05), 
+    length.out=floor(paletteLength/2)))  
+
+dorotheaBreaks50_subset5 <- c(seq(min(tf_activities_vector_50$Counts_2_2.5_p0.05), 0, 
+    length.out=ceiling(paletteLength/2) + 1),
+    seq(max(tf_activities_vector_50$Counts_2_2.5_p0.05)/paletteLength, 
+    max(tf_activities_vector_50$Counts_2_2.5_p0.05), 
+    length.out=floor(paletteLength/2)))  
+
+dorotheaBreaks50_subset6 <- c(seq(min(tf_activities_vector_50$Counts_2.5_3_p0.05), 0, 
+    length.out=ceiling(paletteLength/2) + 1),
+    seq(max(tf_activities_vector_50$Counts_2.5_3_p0.05)/paletteLength, 
+    max(tf_activities_vector_50$Counts_2.5_3_p0.05), 
+    length.out=floor(paletteLength/2)))  
+
+dorotheaBreaks50_subset7 <- c(seq(min(tf_activities_vector_50$Counts_3_4.5_p0.05), 0, 
+    length.out=ceiling(paletteLength/2) + 1),
+    seq(max(tf_activities_vector_50$Counts_3_4.5_p0.05)/paletteLength, 
+    max(tf_activities_vector_50$Counts_3_4.5_p0.05), 
+    length.out=floor(paletteLength/2))) 
+
+dorotheaBreaks50_subset8 <- c(seq(min(tf_activities_vector_50$Counts_4.5_5_p0.05), 0, 
+    length.out=ceiling(paletteLength/2) + 1),
+    seq(max(tf_activities_vector_50$Counts_4.5_5_p0.05)/paletteLength, 
+    max(tf_activities_vector_50$Counts_4.5_5_p0.05), 
+    length.out=floor(paletteLength/2))) 
+
+dorotheaBreaks50_subset9 <- c(seq(min(tf_activities_vector_50$Counts_5_6_p0.05), 0, 
+    length.out=ceiling(paletteLength/2) + 1),
+    seq(max(tf_activities_vector_50$Counts_5_6_p0.05)/paletteLength, 
+    max(tf_activities_vector_50$Counts_5_6_p0.05), 
+    length.out=floor(paletteLength/2)))  
+
+dorotheaBreaks50_subset10 <- c(seq(min(tf_activities_vector_50$Counts_6_0_p0.05), 0, 
+    length.out=ceiling(paletteLength/2) + 1),
+    seq(max(tf_activities_vector_50$Counts_6_0_p0.05)/paletteLength, 
+    max(tf_activities_vector_50$Counts_6_0_p0.05), 
+    length.out=floor(paletteLength/2)))  
+}
+# Create list object so we can use it for looping
+Dorothea.breaks.list<-list(dorotheaBreaks50_subset1,dorotheaBreaks50_subset2,dorotheaBreaks50_subset3,dorotheaBreaks50_subset4,dorotheaBreaks50_subset5,dorotheaBreaks50_subset6,dorotheaBreaks50_subset7,dorotheaBreaks50_subset8,dorotheaBreaks50_subset9,dorotheaBreaks50_subset10)
+# Add correct names to list objects
+names(Dorothea.breaks.list) <- c("dorotheaBreaks50_subset1","dorotheaBreaks50_subset2","dorotheaBreaks50_subset3","dorotheaBreaks50_subset4","dorotheaBreaks50_subset5","dorotheaBreaks50_subset6","dorotheaBreaks50_subset7","dorotheaBreaks50_subset8","dorotheaBreaks50_subset9","dorotheaBreaks50_subset10" )
+```
+
+```{r, fig.height=100, fig.width=60, warning=FALSE}
+# Start creating heatmaps that show the TF activity over time
+
+# color pallette
+paletteLength <- 100
+myColor <- colorRampPalette(c("darkblue", "whitesmoke","indianred"))(paletteLength)
+
+# load library
+library(pheatmap)
+
+# create list object
+#dorothea.hmaps.list<-list()
+
+# Start loop
+#for (i in seq_along(tf_activities_counts_list)){
+#  print(paste("Creating top 50 vector for timepoint:", names(tf_activities_counts_list)[i]))
+
+#tf_activities_50 <- tf_activities_counts_list
+#tf_activities_vector_50<-as.vector(tf_activities_50)
+
+
+# start loop 2
+#for (j in seq_along(Dorothea.breaks.list)) {
+#  print(paste("Selecting heatmap breaks:", names(Dorothea.breaks.list)[j]))
+#  print(paste("Creating heatmap for timepoint:", names(tf_activities_counts_list)[i]))
+
+# Continue loop
+#dorothea_hmaps_subplots <- pheatmap((as.numeric(unlist(tf_activities_counts_list)[i])),cluster_cols = FALSE,
+#   fontsize=14, fontsize_row = 8, fontsize_col = 8, 
+#    color=myColor, breaks = as.numeric(unlist(Dorothea.breaks.list)[[j]]),
+#    main = ((names(tf_activities_counts_list[i]))), 
+#    angle_col = 45,
+#    treeheight_col = 0,  border_color = NA)
+
+
+#dorothea.hmaps.list<-dorothea_hmaps_subplots }
+#names(dorothea.hmaps.list)<-names(tf_activities_counts_list)  } # end loop 1
+```
+
+```{r, warning=FALSE, fig.height=160, fig.width=80}
+# create maps by hand loop getting stuck
+Subset1<-pheatmap(tf_activities_counts_list$Counts_0_0.5_p0.05,cluster_cols = FALSE,cluster_rows = TRUE,
+    fontsize=35, fontsize_row = 20, fontsize_col = 20, 
+    color=myColor, breaks = Dorothea.breaks.list$dorotheaBreaks50_subset1,
+    main = "Dorothea ABC top 50: Day 0 - 0.5", 
+    angle_col = 45,
+    treeheight_col = 0,  border_color = NA)
+
+Subset2<-pheatmap(tf_activities_counts_list$Counts_0.5_1_p0.05,cluster_cols = FALSE,cluster_rows = TRUE,
+    fontsize=35, fontsize_row = 20, fontsize_col = 20, 
+    color=myColor, breaks = Dorothea.breaks.list$dorotheaBreaks50_subset2,
+    main = "Dorothea ABC top 50: Day 0.5 - 1", 
+    angle_col = 45,
+    treeheight_col = 0,  border_color = NA)
+
+Subset3<-pheatmap(tf_activities_counts_list$Counts_1_1.5_p0.05,cluster_cols = FALSE,cluster_rows = TRUE,
+    fontsize=35, fontsize_row = 20, fontsize_col = 20, 
+    color=myColor, breaks = Dorothea.breaks.list$dorotheaBreaks50_subset3,
+    main = "Dorothea ABC top 50: Day 1 - 1.5", 
+    angle_col = 45,
+    treeheight_col = 0,  border_color = NA)
+
+Subset4<-pheatmap(tf_activities_counts_list$Counts_1.5_2_p0.05,cluster_cols = FALSE,cluster_rows = TRUE,
+    fontsize=35, fontsize_row = 20, fontsize_col = 20, 
+    color=myColor, breaks = Dorothea.breaks.list$dorotheaBreaks50_subset4,
+    main = "Dorothea ABC top 50: Day 1.5 - 2", 
+    angle_col = 45,
+    treeheight_col = 0,  border_color = NA)
+
+Subset5<-pheatmap(tf_activities_counts_list$Counts_2_2.5_p0.05,cluster_cols = FALSE,cluster_rows = TRUE,
+    fontsize=35, fontsize_row = 20, fontsize_col = 20, 
+    color=myColor, breaks = Dorothea.breaks.list$dorotheaBreaks50_subset5,
+    main = "Dorothea ABC top 50: Day 2 - 2.5", 
+    angle_col = 45,
+    treeheight_col = 0,  border_color = NA)
+
+Subset6<-pheatmap(tf_activities_counts_list$Counts_2.5_3_p0.05,cluster_cols = FALSE,cluster_rows = TRUE,
+    fontsize=35, fontsize_row = 20, fontsize_col = 20, 
+    color=myColor, breaks = Dorothea.breaks.list$dorotheaBreaks50_subset6,
+    main = "Dorothea ABC top 50: Day 2.5 - 3", 
+    angle_col = 45,
+    treeheight_col = 0,  border_color = NA)
+
+Subset7<-pheatmap(tf_activities_counts_list$Counts_3_4.5_p0.05,cluster_cols = FALSE,cluster_rows = TRUE,
+    fontsize=35, fontsize_row = 20, fontsize_col = 20, 
+    color=myColor, breaks = Dorothea.breaks.list$dorotheaBreaks50_subset7,
+    main = "Dorothea ABC top 50: Day 3 - 4.5", 
+    angle_col = 45,
+    treeheight_col = 0,  border_color = NA)
+
+Subset8<-pheatmap(tf_activities_counts_list$Counts_4.5_5_p0.05,cluster_cols = FALSE,cluster_rows = TRUE,
+    fontsize=35, fontsize_row = 20, fontsize_col = 20, 
+    color=myColor, breaks = Dorothea.breaks.list$dorotheaBreaks50_subset8,
+    main = "Dorothea ABC top 50: Day 4.5 - 5", 
+    angle_col = 45,
+    treeheight_col = 0,  border_color = NA)
+
+Subset9<-pheatmap(tf_activities_counts_list$Counts_5_6_p0.05,cluster_cols = FALSE,cluster_rows = TRUE,
+    fontsize=35, fontsize_row = 20, fontsize_col = 20, 
+    color=myColor, breaks = Dorothea.breaks.list$dorotheaBreaks50_subset9,
+    main = "Dorothea ABC top 50: Day 5 - 6", 
+    angle_col = 45,
+    treeheight_col = 0,  border_color = NA)
+
+Subset10<-pheatmap(tf_activities_counts_list$Counts_6_0_p0.05,cluster_cols = FALSE,cluster_rows = TRUE,
+    fontsize=35, fontsize_row = 20, fontsize_col = 20, 
+    color=myColor, breaks = Dorothea.breaks.list$dorotheaBreaks50_subset10,
+    main = "Dorothea ABC top 50: Day 0 - 6", 
+    angle_col = 45,
+    treeheight_col = 0,  border_color = NA)
+
+# Combined figure
+# load libraries
+library(ggplot2)
+library(ggplotify)
+library(pheatmap)
+library(patchwork)
+
+
+# save plots
+p1 <- as.ggplot(Subset1)
+p2 <- as.ggplot(Subset2)
+p3 <- as.ggplot(Subset3)
+p4 <- as.ggplot(Subset4)
+p5 <- as.ggplot(Subset5)
+p6 <- as.ggplot(Subset6)
+p7 <- as.ggplot(Subset7)
+p8 <- as.ggplot(Subset8)
+p9 <- as.ggplot(Subset9)
+p10<- as.ggplot(Subset10)
+
+# use patchwork to arrange them together
+p1 + p2 + p3 + p4 + p5 + p6 + p7 + p8 +p9 + p10
+
+```
+
+
+```{r}
+# This section will be dedicated to extracting the TF.names from the total deseq dataset in order to visualize the dynamics over the total differentiation time range in a heatmap
+
+# First load the data
+library(readxl)
+gene_expr_total_set <- read_excel("data/Normalized count matrixes/gene_expr_total_set.xlsx")
+gene_expr_total_set<- tibble::column_to_rownames(gene_expr_total_set, var = "rowname")
+
+# For the sake of making looping as easy as possible I'll create a list that contains the full dataset 10 times as there are 10 subsets
+Total_timep_counts.list<-list(gene_expr_total_set, gene_expr_total_set,gene_expr_total_set,gene_expr_total_set,gene_expr_total_set,gene_expr_total_set,gene_expr_total_set,gene_expr_total_set,gene_expr_total_set,gene_expr_total_set)
+# Create names for the list
+names(Total_timep_counts.list) <- c("Enriched TFs day 0 vs 0.5 over time","Enriched TFs day 0.5 vs 1 over time","Enriched TFs day 1 vs 1.5 over time","Enriched TFs day 1.5 vs 2 over time","Enriched TFs day 2 vs 2.5 over time","Enriched TFs day 2.5 vs 3 over time","Enriched TFs day 3 vs 4.5 over time","Enriched TFs day 4.5 vs 5 over time","Enriched TFs day 5 vs 6 over time","Enriched TFs day 0 vs 6 over time" )
+
+```
+
+
+```{r, fig.height=30}
+# From here by hand
+# Create subset that contains the TFs for subset1 #46 rows
+Heatmap_genes_subset1<-as.data.frame(Total_timep_counts.list$`Enriched TFs day 0 vs 0.5 over time`[rownames(Total_timep_counts.list$`Enriched TFs day 0 vs 0.5 over time`) %in% selected.tf$Deseq_Results_0_0.5_p0.05,]) 
+
+# Create subset that contains the TFs for subset2 #45 rows
+Heatmap_genes_subset2<-as.data.frame(Total_timep_counts.list$`Enriched TFs day 0.5 vs 1 over time`[rownames(Total_timep_counts.list$`Enriched TFs day 0.5 vs 1 over time`) %in% selected.tf$Deseq_Results_0.5_1_p0.05,]) 
+
+
+# Create subset that contains the TFs for subset3 #48 rows
+Heatmap_genes_subset3<-as.data.frame(Total_timep_counts.list$`Enriched TFs day 1 vs 1.5 over time`[rownames(Total_timep_counts.list$`Enriched TFs day 1 vs 1.5 over time`) %in% selected.tf$Deseq_Results_1_1.5_p0.05,]) 
+
+# Create subset that contains the TFs for subset4 #44 rows
+Heatmap_genes_subset4<-as.data.frame(Total_timep_counts.list$`Enriched TFs day 1.5 vs 2 over time`[rownames(Total_timep_counts.list$`Enriched TFs day 1.5 vs 2 over time`) %in% selected.tf$Deseq_Results_1.5_2_p0.05,])
+
+# Create subset that contains the TFs for subset5 #45 rows
+Heatmap_genes_subset5<-as.data.frame(Total_timep_counts.list$`Enriched TFs day 2 vs 2.5 over time`[rownames(Total_timep_counts.list$`Enriched TFs day 2 vs 2.5 over time`) %in% selected.tf$Deseq_Results_2_2.5_p0.05,])
+
+# Create subset that contains the TFs for subset6 #43 rows
+Heatmap_genes_subset6<-as.data.frame(Total_timep_counts.list$`Enriched TFs day 2.5 vs 3 over time`[rownames(Total_timep_counts.list$`Enriched TFs day 2.5 vs 3 over time`) %in% selected.tf$Deseq_Results_2.5_3_p0.05,])
+
+# Create subset that contains the TFs for subset7 #44 rows
+Heatmap_genes_subset7<-as.data.frame(Total_timep_counts.list$`Enriched TFs day 3 vs 4.5 over time`[rownames(Total_timep_counts.list$`Enriched TFs day 3 vs 4.5 over time`) %in% selected.tf$Deseq_Results_3_4.5_p0.05,])
+
+# Create subset that contains the TFs for subset8 #45 rows
+Heatmap_genes_subset8<-as.data.frame(Total_timep_counts.list$`Enriched TFs day 4.5 vs 5 over time`[rownames(Total_timep_counts.list$`Enriched TFs day 4.5 vs 5 over time`) %in% selected.tf$Deseq_Results_4.5_5_p0.05,])
+
+# Create subset that contains the TFs for subset9 #46 rows
+Heatmap_genes_subset9<-as.data.frame(Total_timep_counts.list$`Enriched TFs day 5 vs 6 over time`[rownames(Total_timep_counts.list$`Enriched TFs day 5 vs 6 over time`) %in% selected.tf$Deseq_Results_5_6_p0.05,])
+
+# Create subset that contains the TFs for subset10 #46 rows
+Heatmap_genes_subset10<-as.data.frame(Total_timep_counts.list$`Enriched TFs day 0 vs 6 over time`[rownames(Total_timep_counts.list$`Enriched TFs day 0 vs 6 over time`) %in% selected.tf$Deseq_Results_6_0_p0.05,])
+
+# Create list so we can loop the pheatmaps
+heatmap_genes_list<-list(Heatmap_genes_subset1,Heatmap_genes_subset2,Heatmap_genes_subset3,Heatmap_genes_subset4,Heatmap_genes_subset5,Heatmap_genes_subset6,Heatmap_genes_subset7,Heatmap_genes_subset8,Heatmap_genes_subset9,Heatmap_genes_subset10)
+
+# Give correct names to list
+names(heatmap_genes_list)<-c("Enriched TFs day 0 vs 0.5 over time","Enriched TFs day 0.5 vs 1 over time","Enriched TFs day 1 vs 1.5 over time","Enriched TFs day 1.5 vs 2 over time","Enriched TFs day 2 vs 2.5 over time","Enriched TFs day 2.5 vs 3 over time","Enriched TFs day 3 vs 4.5 over time","Enriched TFs day 4.5 vs 5 over time","Enriched TFs day 5 vs 6 over time","Enriched TFs day 0 vs 6 over time" )
+
+```
+
+
+```{r, fig.height=50}
+# again do it by hand to combine the objects into one figure
+pheat1<-pheatmap(heatmap_genes_list$`Enriched TFs day 0 vs 0.5 over time`,cluster_cols = FALSE,cluster_rows = TRUE,
+    fontsize=35, fontsize_row = 20, fontsize_col = 20, 
+    color=myColor, scale = "row",
+    main = "Enriched TFs day 0 vs 0.5 over time", 
+    angle_col = 45,
+    treeheight_col = 0,  border_color = NA) 
+pheat2<-pheatmap(heatmap_genes_list$`Enriched TFs day 0.5 vs 1 over time`,cluster_cols = FALSE,cluster_rows = TRUE,
+    fontsize=35, fontsize_row = 20, fontsize_col = 20, 
+    color=myColor, scale = "row",
+    main = "Enriched TFs day 0.5 vs 1 over time", 
+    angle_col = 45,
+    treeheight_col = 0,  border_color = NA) 
+pheat3<-pheatmap(heatmap_genes_list$`Enriched TFs day 1 vs 1.5 over time`,cluster_cols = FALSE,cluster_rows = TRUE,
+    fontsize=35, fontsize_row = 20, fontsize_col = 20, 
+    color=myColor, scale = "row",
+    main = "Enriched TFs day 1 vs 1.5 over time", 
+    angle_col = 45,
+    treeheight_col = 0,  border_color = NA) 
+pheat4<-pheatmap(heatmap_genes_list$`Enriched TFs day 1.5 vs 2 over time`,cluster_cols = FALSE,cluster_rows = TRUE,
+    fontsize=35, fontsize_row = 20, fontsize_col = 20, 
+    color=myColor, scale = "row",
+    main = "Enriched TFs day 1.5 vs 2 over time", 
+    angle_col = 45,
+    treeheight_col = 0,  border_color = NA) 
+pheat5<-pheatmap(heatmap_genes_list$`Enriched TFs day 2 vs 2.5 over time`,cluster_cols = FALSE,cluster_rows = TRUE,
+    fontsize=35, fontsize_row = 20, fontsize_col = 20, 
+    color=myColor, scale = "row",
+    main = "Enriched TFs day 2 vs 2.5 over time", 
+    angle_col = 45,
+    treeheight_col = 0,  border_color = NA) 
+pheat6<-pheatmap(heatmap_genes_list$`Enriched TFs day 2.5 vs 3 over time`,cluster_cols = FALSE,cluster_rows = TRUE,
+    fontsize=35, fontsize_row = 20, fontsize_col = 20, 
+    color=myColor, scale = "row",
+    main = "Enriched TFs day 2.5 vs 3 over time", 
+    angle_col = 45,
+    treeheight_col = 0,  border_color = NA) 
+pheat7<-pheatmap(heatmap_genes_list$`Enriched TFs day 3 vs 4.5 over time`,cluster_cols = FALSE,cluster_rows = TRUE,
+    fontsize=35, fontsize_row = 20, fontsize_col = 20, 
+    color=myColor, scale = "row",
+    main = "Enriched TFs day 3 vs 4.5 over time", 
+    angle_col = 45,
+    treeheight_col = 0,  border_color = NA) 
+pheat8<-pheatmap(heatmap_genes_list$`Enriched TFs day 4.5 vs 5 over time`,cluster_cols = FALSE,cluster_rows = TRUE,
+    fontsize=35, fontsize_row = 20, fontsize_col = 20, 
+    color=myColor, scale = "row",
+    main = "Enriched TFs day 4.5 vs 5 over time", 
+    angle_col = 45,
+    treeheight_col = 0,  border_color = NA) 
+pheat9<-pheatmap(heatmap_genes_list$`Enriched TFs day 5 vs 6 over time`,cluster_cols = FALSE,cluster_rows = TRUE,
+    fontsize=35, fontsize_row = 20, fontsize_col = 20, 
+    color=myColor, scale = "row",
+    main = "Enriched TFs day 5 vs 6 over time", 
+    angle_col = 45,
+    treeheight_col = 0,  border_color = NA) 
+pheat10<-pheatmap(heatmap_genes_list$`Enriched TFs day 0 vs 6 over time`,cluster_cols = FALSE,cluster_rows = TRUE,
+    fontsize=35, fontsize_row = 20, fontsize_col = 20, 
+    color=myColor, scale = "row",
+    main = "Enriched TFs day 0 vs 6 over time", 
+    angle_col = 45,
+    treeheight_col = 0,  border_color = NA) 
+
+# Combined figure
+# load libraries
+library(ggplot2)
+library(ggplotify)
+library(pheatmap)
+library(patchwork)
+
+
+# save plots
+p1 <- as.ggplot(pheat1)
+p2 <- as.ggplot(pheat2)
+p3 <- as.ggplot(pheat3)
+p4 <- as.ggplot(pheat4)
+p5 <- as.ggplot(pheat5)
+p6 <- as.ggplot(pheat6)
+p7 <- as.ggplot(pheat7)
+p8 <- as.ggplot(pheat8)
+p9 <- as.ggplot(pheat9)
+p10<- as.ggplot(pheat10)
+
+# use patchwork to arrange them together
+p1 + p2 + p3 + p4 + p5 + p6 + p7 + p8 +p9 + p10
+
+
+```
+
+
+## Transcription factor and target overlap over time
+
+Other interesting information regarding the TF activity and the exact dynamics of these TFs and there respective targets over the keratinocyte differentiation time course may involve overlap in activity. Therefore, this section is dedicated to visualizing the overlap in TF-regulon activity over time.
+
+```{r}
+
+# I have found a package, called Rven that is intended to set operations on multiple sets
+
+# Load libraries
+library(purrr)
+library(RVenn)
+library(ggplot2)
+
+# Use selected.tf this list contains the names of the TFs as a string character 
+Venn_object<-Venn(selected.tf)
+
+# Determine the intersection of all sets:
+overlap(Venn_object)
+
+# Determine the intersection of selected sets (chosen with names or indices, respectively):
+#overlap(Venn_object, c(1,2))
+
+# Pariwise intersections
+overlap_pairs(Venn_object)
+
+
+```
+
+The result above indicates the overlap in TFs between the variety of subsets. The totality of enriched TFs over the union of all sets is indicated below.
+
+```{r}
+
+# Take the union of all sets
+unite(Venn_object)
+GO_Set<-as.data.frame(unite(Venn_object))
+
+```
+In order to visualize the overlap over the union it might be of interest to create a Venn diagram. Therefore the first figures indicate the overlap between the consecutive subsets (n=2). Thereafter the overlap was determined between the consecutive subsets (n=3).
+
+```{r, warning= False, fig.width=20}
+
+# First create Venn diagrams where we compare the overlap between the consecutive subsets
+ggvenn(Venn_object, slice = c(1,2))
+ggvenn(Venn_object, slice = c(2,3))
+ggvenn(Venn_object, slice= c(3,4))
+ggvenn(Venn_object, slice = c(4,5))
+ggvenn(Venn_object, slice = c(5,6))
+ggvenn(Venn_object, slice = c(6,7))
+ggvenn(Venn_object, slice = c(7,8))
+ggvenn(Venn_object, slice = c(8,9))
+
+ggvenn(Venn_object, slice = c(1,2,3))
+ggvenn(Venn_object, slice = c(5,6,7))
+ggvenn(Venn_object, slice = c(6,7,8))
+ggvenn(Venn_object, slice = c(7,8,9))
+```
+
+In addition to the Venn diagrams it is also a possibility to show the overlap in a heatmap.
+```{r, warning=False, fig.height=50}
+
+# First one with clustering
+setmap(Venn_object, element_fontsize = 15, set_fontsize = 25)
+
+# Second one iwthout clustering
+setmap(Venn_object, element_clustering = FALSE, set_clustering = FALSE, element_fontsize = 15, set_fontsize = 25)
+
+```
+
+Now we have visualized the overlap between TFs we can finally prepare the data as input for Carnival (Use the Top.50.list).
+```{r}
+
+# For this we need a new df that contains the t-values from diff expr results and rownames
+# Make sure we select the genes according to filtering according to padj. This data can be found in the list res.deseq.filtered
+# Subset1
+#Deseq_Results_0_0.5_p0.05_tval<-res.deseq.filtered$Deseq_Results_0_0.5_p0.05
+#Deseq_Results_0_0.5_p0.05_tval<-subset(Deseq_Results_0_0.5_p0.05_tval, select = c(4))
+#names(Deseq_Results_0_0.5_p0.05_tval)[1]<-"t"
+# Subset2
+#Deseq_Results_0.5_1_p0.05_tval<-res.deseq.filtered$Deseq_Results_0.5_1_p0.05
+#Deseq_Results_0.5_1_p0.05_tval<-subset(Deseq_Results_0.5_1_p0.05_tval, select = c(4))
+#names(Deseq_Results_0.5_1_p0.05_tval)[1]<-"t"
+# Subset3
+#Deseq_Results_1_1.5_p0.05_tval<-res.deseq.filtered$Deseq_Results_1_1.5_p0.05
+#Deseq_Results_1_1.5_p0.05_tval<-subset(Deseq_Results_1_1.5_p0.05_tval, select = c(4))
+#names(Deseq_Results_1_1.5_p0.05_tval)[1]<-"t"
+# Subset4
+#Deseq_Results_1.5_2_p0.05_tval<-res.deseq.filtered$Deseq_Results_1.5_2_p0.05
+#Deseq_Results_1.5_2_p0.05_tval<-subset(Deseq_Results_1.5_2_p0.05_tval, select = c(4))
+#names(Deseq_Results_1.5_2_p0.05_tval)[1]<-"t"
+# Subset5
+#Deseq_Results_2_2.5_p0.05_tval<-res.deseq.filtered$Deseq_Results_2_2.5_p0.05
+#Deseq_Results_2_2.5_p0.05_tval<-subset(Deseq_Results_2_2.5_p0.05_tval, select = c(4))
+# Subset6
+#Deseq_Results_2.5_3_p0.05_tval<-res.deseq.filtered$Deseq_Results_2.5_3_p0.05
+#Deseq_Results_2.5_3_p0.05_tval<-subset(Deseq_Results_2.5_3_p0.05_tval, select = c(4))
+#names(Deseq_Results_2.5_3_p0.05_tval)[1]<-"t"
+# Subset7
+#Deseq_Results_3_4.5_p0.05_tval<-res.deseq.filtered$Deseq_Results_3_4.5_p0.05
+#Deseq_Results_3_4.5_p0.05_tval<-subset(Deseq_Results_3_4.5_p0.05_tval, select = c(4))
+#names(Deseq_Results_3_4.5_p0.05_tval)[1]<-"t"
+# Subset8
+#Deseq_Results_4.5_5_p0.05_tval<-res.deseq.filtered$Deseq_Results_4.5_5_p0.05
+#Deseq_Results_4.5_5_p0.05_tval<-subset(Deseq_Results_4.5_5_p0.05_tval, select = c(4))
+#names(Deseq_Results_4.5_5_p0.05_tval)[1]<-"t"
+# Subset9
+#Deseq_Results_5_6_p0.05_tval<-res.deseq.filtered$Deseq_Results_5_6_p0.05
+#Deseq_Results_5_6_p0.05_tval<-subset(Deseq_Results_5_6_p0.05_tval, select = c(4))
+#names(Deseq_Results_5_6_p0.05_tval)[1]<-"t"
+
+# Now we have generated the correct dfs we need to generate the top tf's 
+# Subset1
+#tf_activities_stat_subset1 <- dorothea::run_viper(Deseq_Results_0_0.5_p0.05_tval, regulons,
+#    options =  list(minsize = 5, eset.filter = FALSE, 
+#    cores = 1, verbose = FALSE, nes = TRUE))
+# Subset2
+#tf_activities_stat_subset2 <- dorothea::run_viper(Deseq_Results_0.5_1_p0.05_tval, regulons,
+#    options =  list(minsize = 5, eset.filter = FALSE, 
+#    cores = 1, verbose = FALSE, nes = TRUE))
+# Subset3
+#tf_activities_stat_subset3 <- dorothea::run_viper(Deseq_Results_1_1.5_p0.05_tval, regulons,
+#    options =  list(minsize = 5, eset.filter = FALSE, 
+#    cores = 1, verbose = FALSE, nes = TRUE))
+# Subset4
+#tf_activities_stat_subset4 <- dorothea::run_viper(Deseq_Results_1.5_2_p0.05_tval, regulons,
+#    options =  list(minsize = 5, eset.filter = FALSE, 
+#    cores = 1, verbose = FALSE, nes = TRUE))
+# Subset5
+#tf_activities_stat_subset5 <- dorothea::run_viper(Deseq_Results_2_2.5_p0.05_tval, regulons,
+#    options =  list(minsize = 5, eset.filter = FALSE, 
+#    cores = 1, verbose = FALSE, nes = TRUE))
+# Subset6
+#tf_activities_stat_subset6 <- dorothea::run_viper(Deseq_Results_2.5_3_p0.05_tval, regulons,
+#    options =  list(minsize = 5, eset.filter = FALSE, 
+#    cores = 1, verbose = FALSE, nes = TRUE))
+# Subset7
+#tf_activities_stat_subset7 <- dorothea::run_viper(Deseq_Results_3_4.5_p0.05_tval, regulons,
+#    options =  list(minsize = 5, eset.filter = FALSE, 
+#    cores = 1, verbose = FALSE, nes = TRUE))
+# Subset8
+#tf_activities_stat_subset8 <- dorothea::run_viper(Deseq_Results_4.5_5_p0.05_tval, regulons,
+#    options =  list(minsize = 5, eset.filter = FALSE, 
+#    cores = 1, verbose = FALSE, nes = TRUE))
+# Subset9
+#tf_activities_stat_subset9 <- dorothea::run_viper(Deseq_Results_5_6_p0.05_tval, regulons,
+#    options =  list(minsize = 5, eset.filter = FALSE, 
+#    cores = 1, verbose = FALSE, nes = TRUE))
+
+
+# Write csvs for each df so we can load it into a new project
+# Subset1
+#tf_activities_CARNIVALinput_0_0.5<- tf_activities_stat_subset1 %>%
+#    as.data.frame() %>% 
+#    tibble::rownames_to_column(var = "TF") 
+
+#write.csv(tf_activities_CARNIVALinput_0_0.5, 
+#    "TFactivity_CARNIVALinput_0_0.5.csv")
+
+
+# Subset2
+#tf_activities_CARNIVALinput_0.5_1<- tf_activities_stat_subset2 %>%
+#    as.data.frame() %>% 
+#    tibble::rownames_to_column(var = "TF") 
+
+#write.csv(tf_activities_CARNIVALinput_0.5_1, 
+#    "TFactivity_CARNIVALinput_0.5_1.csv")
+
+
+# Subset3
+#tf_activities_CARNIVALinput_1_1.5<- tf_activities_stat_subset3 %>%
+#    as.data.frame() %>% 
+#    tibble::rownames_to_column(var = "TF") 
+
+#write.csv(tf_activities_CARNIVALinput_1_1.5, 
+#    "TFactivity_CARNIVALinput_1_1.5.csv")
+
+
+
+# Subset4
+#tf_activities_CARNIVALinput_1.5_2<- tf_activities_stat_subset4 %>%
+#    as.data.frame() %>% 
+#    tibble::rownames_to_column(var = "TF") 
+
+#write.csv(tf_activities_CARNIVALinput_1.5_2, 
+#    "TFactivity_CARNIVALinput_1.5_2.csv")
+
+
+# Subset5
+#tf_activities_CARNIVALinput_2_2.5<- tf_activities_stat_subset5 %>%
+#    as.data.frame() %>% 
+#    tibble::rownames_to_column(var = "TF") 
+
+#write.csv(tf_activities_CARNIVALinput_2_2.5, 
+#    "TFactivity_CARNIVALinput_2_2.5.csv")
+
+
+# Subset6
+#tf_activities_CARNIVALinput_2.5_3<- tf_activities_stat_subset6%>%
+#    as.data.frame() %>% 
+#    tibble::rownames_to_column(var = "TF") 
+
+#write.csv(tf_activities_CARNIVALinput_2.5_3,     "TFactivity_CARNIVALinput_2.5_3.csv")
+
+
+# Subset7
+#tf_activities_CARNIVALinput_3_4.5<- tf_activities_stat_subset7 %>%
+#    as.data.frame() %>% 
+#    tibble::rownames_to_column(var = "TF") 
+
+#write.csv(tf_activities_CARNIVALinput_3_4.5, 
+#    "TFactivity_CARNIVALinput_3_4.5.csv")
+
+
+# Subset8
+#tf_activities_CARNIVALinput_4.5_5<- tf_activities_stat_subset8 %>%
+#    as.data.frame() %>% 
+#    tibble::rownames_to_column(var = "TF") 
+
+#write.csv(tf_activities_CARNIVALinput_4.5_5, 
+#    "TFactivity_CARNIVALinput_4.5_5.csv")
+
+
+# Subset 9 
+#tf_activities_CARNIVALinput_5_6<- tf_activities_stat_subset9 %>%
+#    as.data.frame() %>% 
+#    tibble::rownames_to_column(var = "TF") 
+
+#write.csv(tf_activities_CARNIVALinput_5_6, 
+#    "TFactivity_CARNIVALinput_5_6.csv")
+
+
+
+```
+
+
+
+
+
+
+
+
+
+
